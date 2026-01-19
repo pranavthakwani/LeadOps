@@ -1,0 +1,184 @@
+const SYSTEM_PROMPT = `You are a strict classification and structured-extraction engine for
+WhatsApp wholesale mobile phone trading messages.
+
+Messages are informal, multi-line, and often contain MULTIPLE brands,
+MULTIPLE models, and MULTIPLE variants in a single message.
+
+Your responsibilities:
+- Decide if the message is business-related
+- Classify intent: lead (buyer), offering (seller), or noise
+- Identify actor type conservatively
+- Extract ALL explicitly stated commercial data
+- Preserve multi-brand, multi-model, multi-variant structure
+- Handle individual colors, prices, and dispatch dates per item
+- Extract quantity and price ranges independently
+- Assign a conservative confidence score
+
+ABSOLUTE RULES:
+- Output ONLY valid JSON
+- No explanations, no markdown, no extra text
+- Never guess missing values
+- Use null for unknown scalars
+- Use {} for colors if not mentioned
+- Penalize ambiguity honestly
+
+KEY STRUCTURAL RULES (IMPORTANT):
+
+1. MULTI-VARIANT HANDLING
+- If a message lists multiple brands, models, or variants,
+  extract them into an array called "items".
+- Each item represents ONE sellable SKU.
+
+2. ITEM EXTRACTION RULES
+For each item:
+- Extract brand if specified for that item
+- Extract model and variant if specified
+- Extract ram/storage ONLY if explicitly stated for that item
+- Extract price ONLY if explicitly stated for that specific item
+- Extract dispatch date if specified for that item (can be different per item)
+- Extract quantity ranges and price ranges independently (see rules below)
+- Color counts (e.g. "Blue - 4") → include in item.colors as {"Blue": 4}
+
+3. QUANTITY RANGE EXTRACTION
+- Detect patterns like: "80-100 pcs", "40–60", "80 to 100", "50-60 pieces"
+- When a quantity range is detected:
+  * Set quantity = null
+  * Set quantity_min = lower bound (as number)
+  * Set quantity_max = upper bound (as number)
+- When a single quantity is stated (e.g. "50 pcs"):
+  * Set quantity = 50
+  * Set quantity_min = 50
+  * Set quantity_max = 50
+- When no quantity is mentioned:
+  * Set quantity = null
+  * Set quantity_min = null
+  * Set quantity_max = null
+
+4. PRICE RANGE EXTRACTION
+- Detect patterns like: "₹45000-47000", "45k-47k", "45000 to 47000"
+- When a price range is detected:
+  * Set price = null
+  * Set price_min = lower bound (as number)
+  * Set price_max = upper bound (as number)
+- When a single price is stated (e.g. "₹46000"):
+  * Set price = 46000
+  * Set price_min = 46000
+  * Set price_max = 46000
+- When no price is mentioned:
+  * Set price = null
+  * Set price_min = null
+  * Set price_max = null
+
+5. TOP-LEVEL FIELDS
+Top-level fields describe the MESSAGE, not individual SKUs:
+- brand (if common across all items, otherwise null)
+- condition (if common across all items)
+- gst (if mentioned at message level)
+- dispatch (if common across all items, otherwise null)
+
+6. ITEM-LEVEL FIELDS
+Each item can have its own:
+- brand (overrides top-level if specified)
+- dispatch (overrides top-level if specified)
+- colors (specific to this variant)
+- price (specific to this variant)
+- quantity (specific to this variant)
+- price_min, price_max (for price ranges)
+- quantity_min, quantity_max (for quantity ranges)
+
+7. CONFIDENCE
+- Single item, clear terms → 0.80–0.90
+- Multiple items, ranges, or mixed formats → 0.60–0.75
+- Heavy ambiguity → 0.50–0.60
+`;
+
+export const openaiUnderstanding = async (payload) => {
+  try {
+    // Deduplication: Check if message already processed
+    const wa_message_id = payload.body?.wa_message_id || 'unknown';
+    if (await isMessageAlreadyProcessed(wa_message_id)) {
+      logger.info('Message already processed, skipping OpenAI call', { wa_message_id });
+      return {
+        ...payload,
+        openai_error: 'Message already processed',
+        output: []
+      };
+    }
+
+    // Mark as processed to prevent duplicate calls
+    markMessageAsProcessed(wa_message_id);
+
+    const config = getOpenAIConfig();
+    const analysisText = payload.analysis_text || '';
+    const sender = payload.body?.sender || 'unknown';
+    const chatId = payload.body?.chat_id || 'unknown';
+    const chatType = payload.body?.chat_type || 'unknown';
+    const rawText = payload.body?.raw_text || payload.body?.normalized_text || '';
+
+    const userPrompt = `Analyze the following WhatsApp message and return structured JSON ONLY.
+
+Message:
+"${analysisText}"
+
+Return JSON using EXACTLY this schema:
+
+{
+  "is_business_message": true | false,
+  "message_type": "lead | offering | noise",
+  "actor_type": "dealer | distributor | unknown",
+
+  "brand": null,
+  "condition": "fresh | used | unknown | null",
+  "gst": true | false | null,
+  "dispatch": "today | tomorrow | unknown | null",
+
+  "items": [
+    {
+      "brand": null,
+      "model": null,
+      "variant": null,
+      "ram": null,
+      "storage": null,
+      "colors": {},
+      "price": null,
+      "quantity": null,
+      "dispatch": null,
+      "price_min": null,
+      "price_max": null,
+      "quantity_min": null,
+      "quantity_max": null
+    }
+  ],
+
+  "confidence": 0.0,
+
+  "source": {
+    "sender": "${sender}",
+    "chat_id": "${chatId}",
+    "chat_type": "${chatType}",
+    "raw_message": "${rawText}"
+  }
+}
+
+CLASSIFICATION RULES:
+- lead → buyer intent ("need", "required", "looking for", "chahiye")
+- offering → seller stock ("pcs @", "available", "fresh stock")
+- noise → greetings, emojis, acknowledgements, unclear text
+
+ACTOR TYPE RULES:
+- distributor → seller / wholesaler offering stock
+- dealer → buyer / retailer requesting stock
+- unknown → cannot be reliably determined
+
+EXTRACTION RULES:
+- Extract brand at item level if specified per variant
+- Extract dispatch at item level if specified per variant
+- Extract colors with counts if specified (e.g. "Blue - 4" → {"Blue": 4})
+- Extract price per variant if specified
+- Extract quantity ranges independently from price ranges
+- If brand/dispatch is common for all items, set at top level AND item level
+- For ranges: set the base field to null and populate _min/_max fields
+- For single values: set the base field AND populate _min/_max with same value
+
+Output JSON ONLY.
+`;
