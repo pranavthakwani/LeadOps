@@ -8,47 +8,59 @@ import { isMessageAlreadyProcessed, markMessageAsProcessed } from '../utils/mess
 const logger = createLogger('OpenAI Understanding');
 
 const SYSTEM_PROMPT = `
-You are a strict JSON-only extraction engine for WhatsApp wholesale mobile trading messages.
+You extract structured JSON from WhatsApp wholesale electronics messages.
 
-Rules (ABSOLUTE):
-- Output valid JSON only
-- No explanations or markdown
+ABSOLUTE RULES:
+- Output VALID JSON only
+- No explanations, no markdown
 - Never guess or infer
-- Unknown values → null
+- Unknown → null
 - Missing colors → {}
 - Penalize ambiguity honestly
 
-Classification:
-- is_business_message: true | false
-- message_type: lead | offering | noise
-- actor_type: dealer | distributor | unknown
+INTENT PRIORITY (MANDATORY):
+- If message contains "want to buy", "need", "required", "chahiye", "wtb" → message_type = lead
+- If message contains "available", "stock", "pcs @", "ready", "fresh stock", "wts" → message_type = offering
+- If both buyer and seller terms exist, buyer (lead) takes priority
+- If product list exists without prices → still business_message
 
-Structure:
-- Use "items[]" when multiple SKUs exist
-- Each item = one sellable SKU
+STRUCTURE:
+- Use "items[]" when multiple sellable SKUs exist
+- Each item = ONE sellable SKU
 
-Quantity:
-- Range → quantity=null, quantity_min, quantity_max
-- Single → quantity=value and min=max=value
-- Missing → all null
+RAM / STORAGE:
+- Pattern X/Y → RAM=X, STORAGE=Y
+- "256GB" alone → storage
+- Never treat storage as RAM
 
-Price:
+PRICE:
 - Range → price=null, price_min, price_max
 - Single → price=value and min=max=value
 - Missing → all null
 
-Top-level fields ONLY if common to all items:
-brand, condition, gst, dispatch
+QUANTITY:
+- Range → quantity=null, quantity_min, quantity_max
+- Single → quantity=value and min=max=value
+- Missing → all null
 
-Item-level fields:
-brand, model, variant, ram, storage, colors, price*, quantity*, dispatch*
+COLOR SPLIT (IMPORTANT):
+- If colors have quantities, create SEPARATE items per color
+- Each item contains ONLY its color and quantity
 
-Confidence:
+TOP-LEVEL FIELDS (ONLY if common to all items):
+- brand, condition, gst, dispatch
+
+ITEM FIELDS:
+- brand, model, variant, ram, storage, colors
+- price, price_min, price_max
+- quantity, quantity_min, quantity_max
+- dispatch
+
+CONFIDENCE:
 - Single clear item → 0.80–0.90
 - Multiple items or ranges → 0.60–0.75
 - Heavy ambiguity → 0.50–0.60
 `;
-
 
 
 export const openaiUnderstanding = async (payload) => {
@@ -73,37 +85,6 @@ export const openaiUnderstanding = async (payload) => {
     const chatId = payload.body?.chat_id || 'unknown';
     const chatType = payload.body?.chat_type || 'unknown';
     const rawText = (payload.body?.raw_text || '').slice(0, 1500);
-
-    // Pre-filter: Skip OpenAI for obvious non-business messages
-    const text = rawText.toLowerCase();
-    const likelyBusiness = /\b(pcs|pc|@|₹|rs|gst|stock|available|need|req|price)\b/.test(text);
-    
-    if (!likelyBusiness) {
-      const noiseResponse = {
-        is_business_message: false,
-        message_type: 'noise',
-        actor_type: 'unknown',
-        brand: null,
-        condition: null,
-        gst: null,
-        dispatch: null,
-        items: [],
-        confidence: 0,
-        source: {
-          sender,
-          chat_id: chatId,
-          chat_type: chatType,
-          raw_message: rawText
-        }
-      };
-      
-      return {
-        ...payload,
-        output: [{
-          content: [{ text: JSON.stringify(noiseResponse) }]
-        }]
-      };
-    }
 
     const userPrompt = `
 Extract structured JSON for this message:
@@ -148,8 +129,6 @@ Return JSON EXACTLY matching this schema:
 
 Output JSON ONLY.
 `;
-
-
 
     const postOnce = () => axios.post(
       'https://api.openai.com/v1/chat/completions',

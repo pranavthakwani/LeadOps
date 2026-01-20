@@ -2,7 +2,14 @@ import { getSupabase } from '../config/supabase.js';
 import { OPENAI_PRICING } from '../config/openai-pricing.js';
 import { createLogger } from '../utils/logger.js';
 
-const logger = createLogger('OpenAI Usage');
+let logger;
+
+function getLogger() {
+  if (!logger) {
+    logger = createLogger('OpenAI Usage');
+  }
+  return logger;
+}
 
 /**
  * Format OpenAI usage data as table for console output
@@ -54,7 +61,7 @@ export const logOpenAIUsage = async (usageData) => {
     // Get pricing for model
     const pricing = OPENAI_PRICING[model];
     if (!pricing) {
-      logger.warn('No pricing found for model', { model });
+      getLogger().warn('No pricing found for model', { model });
       return;
     }
     
@@ -94,7 +101,7 @@ export const logOpenAIUsage = async (usageData) => {
       });
     
     if (error) {
-      logger.error('Failed to log OpenAI usage', { error, wa_message_id });
+      getLogger().error('Failed to log OpenAI usage', { error, wa_message_id });
       return;
     }
     
@@ -112,6 +119,6 @@ export const logOpenAIUsage = async (usageData) => {
     });
     
   } catch (error) {
-    logger.error('Error logging OpenAI usage', { error });
+    getLogger().error('Error logging OpenAI usage', { error });
   }
 };

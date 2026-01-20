@@ -194,6 +194,75 @@ Uses `--watch` flag for automatic restart on file changes.
 npm start
 ```
 
+## Running with PM2 (Production)
+
+### Why PM2 is Required for WhatsApp Automation
+
+WhatsApp automation without PM2 is unstable due to:
+
+- **Session corruption** when process crashes or restarts manually
+- **Multiple instances** causing session lock / EBUSY errors  
+- **QR re-scan hell** with nodemon or dev mode restarts
+- **WhatsApp Web reload** on app restarts
+
+PM2 provides production-grade stability for long-running WhatsApp bots.
+
+### PM2 Setup
+
+1. **Install PM2 globally** (if not already installed):
+
+```bash
+npm install -g pm2
+```
+
+2. **Start with PM2**:
+
+```bash
+npm run pm2:start
+```
+
+3. **Monitor logs**:
+
+```bash
+npm run pm2:logs
+```
+
+### PM2 Commands
+
+```bash
+npm run pm2:start    # Start the bot with PM2
+npm run pm2:stop     # Stop the bot
+npm run pm2:restart  # Restart the bot
+npm run pm2:logs     # View real-time logs
+npm run pm2:delete   # Remove from PM2 process list
+```
+
+### PM2 Configuration
+
+The `ecosystem.config.cjs` ensures:
+
+- **Single instance only** (prevents duplicate WhatsApp connections)
+- **No watch mode** (prevents unwanted restarts)
+- **Graceful restarts** (5-second delay between restarts)
+- **Production environment** (NODE_ENV=production)
+- **Log files** (stored in `./logs/` directory)
+
+### Expected Behavior with PM2
+
+✅ **WhatsApp QR scanned once** - session persists across restarts  
+✅ **24×7 operation** - no manual terminal required  
+✅ **No duplicate connections** - single instance enforcement  
+✅ **Session stability** - graceful crash handling  
+✅ **Production logging** - structured log files  
+
+### PM2 Use-Case Summary
+
+- **Keeps WhatsApp bot alive** without reloading WhatsApp Web
+- **Prevents accidental multiple logins** and session conflicts  
+- **Eliminates QR re-scan hell** after crashes
+- **Handles crashes safely** with automatic restarts
+- **Required for any serious** WhatsApp automation deployment
+
 ## API Endpoints
 
 ### Health Check
