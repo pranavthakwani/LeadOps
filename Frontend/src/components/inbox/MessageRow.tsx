@@ -25,6 +25,25 @@ export const MessageRow: React.FC<MessageRowProps> = ({ message }) => {
     }
   };
 
+  const getColorDisplay = (color: string | Record<string, number> | undefined) => {
+    if (!color) return null;
+    
+    if (typeof color === 'string') {
+      return { name: color, value: color };
+    }
+    
+    // Handle JSON format like {"Orange": 6}
+    const colorKeys = Object.keys(color);
+    if (colorKeys.length > 0) {
+      const colorName = colorKeys[0];
+      return { name: colorName, value: colorName };
+    }
+    
+    return null;
+  };
+
+  const colorDisplay = getColorDisplay(message.parsedData?.color);
+
   return (
     <div
       onClick={() => navigate(`/message/${message.id}`)}
@@ -93,6 +112,18 @@ export const MessageRow: React.FC<MessageRowProps> = ({ message }) => {
                     <span className="font-medium text-gray-900 dark:text-white ml-1">{message.parsedData.dispatch}</span>
                   </div>
                 )}
+                {colorDisplay && (
+                  <div className="col-span-2 md:col-span-3">
+                    <span className="text-gray-500 dark:text-gray-400">Color:</span>
+                    <div className="flex items-center gap-2 ml-1">
+                      <div 
+                        className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600"
+                        style={{ backgroundColor: colorDisplay.value }}
+                      />
+                      <span className="font-medium text-gray-900 dark:text-white">{colorDisplay.name}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -110,8 +141,6 @@ export const MessageRow: React.FC<MessageRowProps> = ({ message }) => {
                 </span>
               </>
             )}
-            <span>•</span>
-            <span>{Math.round(message.confidence * 100)}% confidence</span>
           </div>
         </div>
       </div>

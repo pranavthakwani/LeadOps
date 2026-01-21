@@ -6,9 +6,6 @@ export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) =
 
 export const SearchSkeleton: React.FC = () => (
   <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-      <Skeleton className="h-6 w-32" />
-    </div>
     <div className="divide-y divide-gray-200 dark:divide-gray-800">
       {[1, 2, 3, 4, 5].map((i) => (
         <div key={i} className="p-6">
@@ -74,11 +71,6 @@ export const MessageRowSkeleton: React.FC = () => (
 
 export const DashboardSkeleton: React.FC = () => (
   <div className="p-8 space-y-6">
-    <div>
-      <Skeleton className="h-8 w-48 mb-2" />
-      <Skeleton className="h-4 w-64" />
-    </div>
-    
     <div className="grid grid-cols-3 gap-6">
       {[1, 2, 3].map((i) => (
         <div key={i} className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-all cursor-pointer">
@@ -97,8 +89,7 @@ export const DashboardSkeleton: React.FC = () => (
 
     <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
       <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-        <Skeleton className="h-6 w-32 mb-1" />
-        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-4 w-48 mb-1" />
       </div>
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
@@ -122,14 +113,8 @@ export const DashboardSkeleton: React.FC = () => (
 
 export const ContactsSkeleton: React.FC = () => (
   <div className="p-8">
-    <div className="mb-6">
-      <Skeleton className="h-8 w-48 mb-2" />
-      <Skeleton className="h-4 w-64" />
-    </div>
-    
     <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
       <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <Skeleton className="h-10 w-full" />
       </div>
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -155,40 +140,31 @@ export const ContactsSkeleton: React.FC = () => (
 
 export const SettingsSkeleton: React.FC = () => (
   <div className="p-8">
-    <div className="mb-6">
-      <Skeleton className="h-8 w-32 mb-2" />
-      <Skeleton className="h-4 w-48" />
-    </div>
-    
     <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
       <div className="p-6 space-y-6">
-        <div>
-          <Skeleton className="h-6 w-32 mb-4" />
-          <div className="space-y-4">
-            <div>
-              <Skeleton className="h-4 w-24 mb-2" />
-              <Skeleton className="h-10 w-64" />
-            </div>
-            <div>
-              <Skeleton className="h-4 w-20 mb-2" />
-              <Skeleton className="h-10 w-48" />
-            </div>
+        <div className="space-y-4">
+          <div>
+            <Skeleton className="h-4 w-24 mb-2" />
+            <Skeleton className="h-10 w-64" />
+          </div>
+          <div>
+            <Skeleton className="h-4 w-20 mb-2" />
+            <Skeleton className="h-10 w-48" />
           </div>
         </div>
-        
-        <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
-          <Skeleton className="h-6 w-32 mb-4" />
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div>
-                  <Skeleton className="h-4 w-32 mb-1" />
-                  <Skeleton className="h-4 w-48" />
-                </div>
-                <Skeleton className="h-6 w-12 rounded" />
+      </div>
+      
+      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center justify-between">
+              <div>
+                <Skeleton className="h-4 w-32 mb-1" />
+                <Skeleton className="h-4 w-48" />
               </div>
-            ))}
-          </div>
+              <Skeleton className="h-6 w-12 rounded" />
+            </div>
+          ))}
         </div>
       </div>
     </div>

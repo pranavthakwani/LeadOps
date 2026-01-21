@@ -15,6 +15,23 @@ export const MessageDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
 
+  const getColorDisplay = (color: string | Record<string, number> | undefined) => {
+    if (!color) return null;
+    
+    if (typeof color === 'string') {
+      return { name: color, value: color };
+    }
+    
+    // Handle JSON format like {"Orange": 6}
+    const colorKeys = Object.keys(color);
+    if (colorKeys.length > 0) {
+      const colorName = colorKeys[0];
+      return { name: colorName, value: colorName };
+    }
+    
+    return null;
+  };
+
   useEffect(() => {
     const fetchMessage = async () => {
       if (!id) return;
@@ -32,6 +49,8 @@ export const MessageDetail: React.FC = () => {
 
     fetchMessage();
   }, [id]);
+
+  const colorDisplay = getColorDisplay(message?.parsedData?.color);
 
   if (loading) {
     return <Loader text="Loading message..." />;
@@ -74,19 +93,16 @@ export const MessageDetail: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</label>
-                <p className="text-base text-gray-900 dark:text-white mt-1">
-                  {new Date(message.timestamp).toLocaleString('en-IN', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                  })}
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Classification</label>
+                <p className="text-base text-gray-900 dark:text-white mt-1 capitalize">
+                  {message.classification}
                 </p>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Confidence</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Detected Brands</label>
                 <p className="text-base text-gray-900 dark:text-white mt-1">
-                  {Math.round(message.confidence * 100)}%
+                  {message.detectedBrands.length > 0 ? message.detectedBrands.join(', ') : 'None'}
                 </p>
               </div>
 
@@ -137,6 +153,18 @@ export const MessageDetail: React.FC = () => {
                   <div>
                     <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Storage</label>
                     <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.storage}</p>
+                  </div>
+                )}
+                {colorDisplay && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Color</label>
+                    <div className="flex items-center gap-3 mt-1">
+                      <div 
+                        className="w-6 h-6 rounded border border-gray-300 dark:border-gray-600"
+                        style={{ backgroundColor: colorDisplay.value }}
+                      />
+                      <span className="text-base text-gray-900 dark:text-white">{colorDisplay.name}</span>
+                    </div>
                   </div>
                 )}
                 {message.parsedData.quantity && (

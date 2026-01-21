@@ -9,6 +9,7 @@ export interface ParsedData {
   price?: number;
   gst?: string;
   dispatch?: string;
+  color?: string | Record<string, number>;
 }
 
 export interface Product {
@@ -21,6 +22,7 @@ export interface Product {
   price?: number;
   gst?: string;
   dispatch?: string;
+  color?: string;
   seller: string;
   sellerNumber: string;
   timestamp: string;

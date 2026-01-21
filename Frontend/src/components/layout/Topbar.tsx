@@ -25,7 +25,7 @@ export const Topbar: React.FC = () => {
   return (
     <header className="h-16 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Trading Dashboard</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Jay Jalaram Enterpise</h2>
       </div>
 
       <div className="flex items-center gap-6">
