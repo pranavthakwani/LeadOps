@@ -25,7 +25,7 @@ const start = () => {
     const app = createApp();
     const port = env.webhook.port;
 
-    app.listen(port, () => {
+    app.listen(port, '0.0.0.0', () => {
       logger.info(`Server started on port ${port}`);
       logger.info('Available endpoints:');
       logger.info(`  GET  /health`);
