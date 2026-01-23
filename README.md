@@ -1,9 +1,33 @@
-# WhatsApp AI Workflow
+# LeadOps - WhatsApp AI Workflow System
 
-Production-grade Node.js application that processes WhatsApp messages using OpenAI for classification and structured extraction. Functionally equivalent to the n8n workflow with 100% behavioral parity.
+A comprehensive full-stack application that automates WhatsApp message processing using AI for lead generation and inventory management. The system consists of a Node.js backend with WhatsApp integration and a React frontend for dashboard management.
+
+## Overview
+
+LeadOps is a production-grade system that:
+- Processes WhatsApp messages in real-time using AI-powered classification
+- Extracts structured data from unstructured messages (products, prices, quantities)
+- Separates buyer leads from seller offerings automatically
+- Provides a web dashboard for data visualization and management
+- Maintains 24/7 operation with robust error handling
+
+## Architecture
+
+### Backend (Node.js/Express)
+- **WhatsApp Integration**: Real-time message listening via whatsapp-web.js
+- **AI Processing**: OpenAI-powered message classification and data extraction
+- **Database**: Supabase for data persistence
+- **API**: RESTful endpoints for frontend integration
+
+### Frontend (React/TypeScript)
+- **Modern UI**: Built with React, TypeScript, and Tailwind CSS
+- **Dashboard**: Real-time data visualization and management
+- **Responsive**: Mobile-first design with Lucide icons
+- **Build Tool**: Vite for fast development and production builds
 
 ## Features
 
+### Backend Capabilities
 - **WhatsApp Integration**: Real-time message listening via whatsapp-web.js
 - **AI Classification**: OpenAI-powered message classification (lead/offering/noise)
 - **Structured Extraction**: Automatic extraction of product details (brand, model, price, quantity, etc.)
@@ -14,36 +38,69 @@ Production-grade Node.js application that processes WhatsApp messages using Open
 - **Webhook Support**: HTTP endpoint for external integrations
 - **Broadcast Detection**: Identifies and processes business broadcast messages appropriately
 
+### Frontend Features
+- **Real-time Dashboard**: Live updates of processed messages and statistics
+- **Lead Management**: View and manage buyer leads with detailed information
+- **Inventory Tracking**: Monitor seller offerings and stock availability
+- **Data Visualization**: Charts and graphs for business insights
+- **Search & Filter**: Advanced filtering options for data management
+- **Responsive Design**: Mobile-friendly interface for on-the-go access
+
+### Reply Tracking System
+- **Native WhatsApp Reply Detection**: Automatically detects when users reply to broadcast messages
+- **Conversation Tracking**: Links replies to original broadcast messages for complete conversation history
+- **No Workflow Disruption**: Reply tracking runs parallel to existing message processing
+- **Database Integration**: Stores all reply data in dedicated `message_replies` table
+- **CRM Ready**: Structured data for easy integration with CRM systems
+
 ## Project Structure
 
 ```
-/src
-  /app.js                 # Express application setup
-  /server.js              # Server entry point
-
-  /config
-    /env.js               # Environment validation and configuration
-    /supabase.js          # Supabase client singleton
-    /openai.js            # OpenAI client configuration
-    /whatsapp.js          # WhatsApp configuration
-
-  /pipeline               # Main processing pipeline
-    /01-normalize-text.js                 # Message normalization
-    /02-openai-understanding.js           # OpenAI API integration
-    /03-parse-validate-json.js            # JSON parsing & initial validation
-    /04-zod-schema-validation.js          # Zod schema validation
-    /05-brand-variant-normalization.js    # Brand normalization & RAM/storage extraction
-    /06-route-by-message-type.js          # Message routing
-    /07-insert-to-db.js                   # Database insertion
-    /index.js             # Pipeline orchestrator
-
-  /constants
-    /enums.js             # Message types, actor types, table names
-    /brands.js            # Canonical brands & brand mappings
-
-  /utils
-    /logger.js            # Logging utility
-    /json-parser.js       # Safe JSON parsing
+LeadOps/
+├── Backend (Node.js)
+│   ├── src/
+│   │   ├── app.js                 # Express application setup
+│   │   ├── server.js              # Server entry point
+│   │   ├── config/
+│   │   │   ├── env.js               # Environment validation and configuration
+│   │   │   ├── supabase.js          # Supabase client singleton
+│   │   │   ├── openai.js            # OpenAI client configuration
+│   │   │   └── whatsapp.js          # WhatsApp configuration
+│   │   ├── pipeline/               # Main processing pipeline
+│   │   │   ├── 01-normalize-text.js                 # Message normalization
+│   │   │   ├── 02-openai-understanding.js           # OpenAI API integration
+│   │   │   ├── 03-parse-validate-json.js            # JSON parsing & initial validation
+│   │   │   ├── 04-zod-schema-validation.js          # Zod schema validation
+│   │   │   ├── 05-brand-variant-normalization.js    # Brand normalization & RAM/storage extraction
+│   │   │   ├── 06-route-by-message-type.js          # Message routing
+│   │   │   ├── 07-insert-to-db.js                   # Database insertion
+│   │   │   └── index.js             # Pipeline orchestrator
+│   │   ├── constants/
+│   │   │   ├── enums.js             # Message types, actor types, table names
+│   │   │   └── brands.js            # Canonical brands & brand mappings
+│   │   ├── utils/
+│   │   │   ├── logger.js            # Logging utility
+│   │   │   └── json-parser.js       # Safe JSON parsing
+│   │   └── services/                # Additional service modules
+│   │   │   ├── reply-handler.js     # Reply detection and processing
+│   │   │   ├── whatsapp.js          # WhatsApp client management
+│   │   │   └── ...                  # Other service modules
+│   ├── package.json                # Backend dependencies
+│   ├── ecosystem.config.cjs         # PM2 configuration
+│   └── sessions/                    # WhatsApp session storage
+│
+└── Frontend (React/TypeScript)
+    ├── src/
+    │   ├── components/              # React components
+    │   ├── pages/                   # Page components
+    │   ├── hooks/                   # Custom React hooks
+    │   ├── utils/                   # Utility functions
+    │   ├── types/                   # TypeScript type definitions
+    │   └── main.tsx                 # Application entry point
+    ├── public/                      # Static assets
+    ├── package.json                # Frontend dependencies
+    ├── vite.config.ts              # Vite configuration
+    └── tailwind.config.js          # Tailwind CSS configuration
 ```
 
 ## Environment Variables
@@ -94,27 +151,31 @@ LOG_LEVEL=info
 
 ### Installation
 
-1. **Clone and install dependencies**
+#### Backend Setup
+
+1. **Install backend dependencies**
 
    ```bash
    npm install
    ```
+
 2. **Configure environment variables**
 
-   ```bash
-   cp .env.example .env
-   # Edit .env with your actual credentials
-   ```
+   Create a `.env` file in the project root with your credentials (see Environment Variables section)
+
 3. **Create Supabase tables** (if not already created):
 
    The system expects these tables to exist:
 
-   - `dealer_leads`
-   - `distributor_offerings`
-   - `ignored_messages`
+   - `dealer_leads` - Stores buyer lead information
+   - `distributor_offerings` - Stores seller offering information
+   - `ignored_messages` - Stores noise/irrelevant messages
+   - `message_replies` - Tracks reply messages and conversations
+   - `openai_usage_logs` - Logs OpenAI API usage and costs
 
-   See Database Schema section for column definitions.
-4. **Verify configuration**
+   See Database Schema section for complete column definitions.
+
+4. **Verify backend configuration**
 
    ```bash
    npm start
@@ -129,69 +190,171 @@ LOG_LEVEL=info
    [INFO] [Server]   POST /whatsapp-ai
    ```
 
+#### Frontend Setup
+
+1. **Navigate to frontend directory**
+
+   ```bash
+   cd Frontend
+   ```
+
+2. **Install frontend dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Start development server**
+
+   ```bash
+   npm run dev
+   ```
+
+   The frontend will be available at `http://localhost:5173`
+
+#### Production Deployment
+
+For production deployment, see the "Running with PM2" section for backend stability.
+
 ## Database Schema
 
 ### dealer_leads
 
 ```sql
-CREATE TABLE dealer_leads (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sender text,
-  chat_id text,
-  chat_type text,
-  brand text,
-  model text,
-  variant text,
-  ram integer,
-  storage integer,
-  colors jsonb,
-  quantity integer,
-  quantity_min integer,
-  quantity_max integer,
-  price numeric,
-  price_min numeric,
-  price_max numeric,
-  condition text,
-  gst boolean,
-  dispatch text,
-  confidence numeric,
-  raw_message text,
-  created_at timestamp default now()
-);
+CREATE TABLE public.dealer_leads (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sender text NOT NULL,
+  chat_id text NOT NULL,
+  chat_type text NOT NULL,
+  brand text NULL,
+  model text NULL,
+  variant text NULL,
+  ram text NULL,
+  storage text NULL,
+  colors jsonb NULL,
+  price numeric NULL,
+  quantity integer NULL,
+  condition text NULL,
+  gst boolean NULL,
+  dispatch text NULL,
+  raw_message text NOT NULL,
+  confidence numeric NULL,
+  created_at timestamp with time zone NULL DEFAULT now(),
+  price_min numeric NULL,
+  price_max numeric NULL,
+  quantity_min integer NULL,
+  quantity_max integer NULL,
+  CONSTRAINT dealer_leads_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
 ```
 
 ### distributor_offerings
 
-Same structure as `dealer_leads`
+```sql
+CREATE TABLE public.distributor_offerings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sender text NOT NULL,
+  chat_id text NOT NULL,
+  chat_type text NOT NULL,
+  brand text NULL,
+  model text NULL,
+  variant text NULL,
+  ram text NULL,
+  storage text NULL,
+  colors jsonb NULL,
+  price numeric NULL,
+  quantity integer NULL,
+  condition text NULL,
+  gst boolean NULL,
+  dispatch text NULL,
+  raw_message text NOT NULL,
+  confidence numeric NULL,
+  created_at timestamp with time zone NULL DEFAULT now(),
+  price_min numeric NULL,
+  price_max numeric NULL,
+  quantity_min integer NULL,
+  quantity_max integer NULL,
+  CONSTRAINT distributor_offerings_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
+```
 
 ### ignored_messages
 
 ```sql
-CREATE TABLE ignored_messages (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sender text,
-  chat_id text,
-  chat_type text,
-  confidence numeric,
-  raw_message text,
-  created_at timestamp default now()
-);
+CREATE TABLE public.ignored_messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sender text NULL,
+  chat_id text NULL,
+  chat_type text NULL,
+  raw_message text NULL,
+  confidence numeric NULL,
+  created_at timestamp with time zone NULL DEFAULT now(),
+  CONSTRAINT ignored_messages_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
+```
+
+### message_replies
+
+```sql
+CREATE TABLE public.message_replies (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  replied_by text NOT NULL,
+  replied_by_name text NULL,
+  replied_message text NOT NULL,
+  replied_at timestamp with time zone NULL DEFAULT now(),
+  quoted_message_id text NOT NULL,
+  quoted_message_text text NOT NULL,
+  chat_type text NOT NULL,
+  source text NOT NULL DEFAULT 'whatsapp'::text,
+  CONSTRAINT message_replies_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
+```
+
+### openai_usage_logs
+
+```sql
+CREATE TABLE public.openai_usage_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  wa_message_id text NULL,
+  model text NULL,
+  input_tokens integer NULL,
+  output_tokens integer NULL,
+  total_tokens integer NULL,
+  cost_input_usd numeric NULL,
+  cost_output_usd numeric NULL,
+  cost_total_usd numeric NULL,
+  latency_ms integer NULL,
+  created_at timestamp with time zone NULL DEFAULT now(),
+  raw_message text NULL,
+  CONSTRAINT openai_usage_logs_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
 ```
 
 ## Running the Application
 
-### Development Mode
-
-```bash
-npm run dev
-```
-
-Uses `--watch` flag for automatic restart on file changes.
-
-### Production Mode
+### Backend Development
 
 ```bash
 npm start
+```
+
+Starts the backend server on port 3000.
+
+### Frontend Development
+
+```bash
+cd Frontend
+npm run dev
+```
+
+Starts the frontend development server on port 5173.
+
+### Production Mode
+
+For production deployment, use PM2 for backend stability:
+
+```bash
+npm run pm2:start
 ```
 
 ## Running with PM2 (Production)
@@ -308,6 +471,7 @@ Response:
 
 ## Pipeline Execution Flow
 
+### Main Message Processing
 1. **Normalize Text** - Extract analysis_text from raw_text or normalized_text
 2. **OpenAI Understanding** - Call OpenAI API with system prompt for classification
 3. **Parse & Validate JSON** - Extract JSON from OpenAI response with error handling
@@ -315,6 +479,13 @@ Response:
 5. **Brand & Variant Normalization** - Normalize brands, extract RAM/storage, detect ranges
 6. **Route by Message Type** - Determine target database table
 7. **Insert to Database** - Write classified message to appropriate Supabase table
+
+### Reply Tracking Process (Parallel)
+1. **Reply Detection** - Monitor 1-to-1 messages for WhatsApp reply indicators
+2. **Quoted Message Lookup** - Extract original message ID using `getQuotedMessage()`
+3. **Original Message Search** - Find matching broadcast in `dealer_leads` or `distributor_offerings`
+4. **Reply Storage** - Insert reply data into `message_replies` table with duplicate protection
+5. **Logging** - Comprehensive logging for debugging and analytics
 
 ## Classification Rules
 
@@ -352,6 +523,44 @@ Broadcast messages are detected via whatsapp-web.js metadata:
 - Processing continues normally (no special filtering)
 - No auto-replies are sent to broadcasts
 - Broadcast flag is NOT stored in database (design decision per requirements)
+
+## Reply Tracking System
+
+### Overview
+
+The reply tracking system runs in parallel to the main message processing pipeline and automatically detects when users reply to broadcast messages. This enables complete conversation tracking without disrupting existing workflows.
+
+### Key Features
+
+- **Native WhatsApp Detection**: Uses WhatsApp's built-in reply detection (`hasQuotedMsg`, `getQuotedMessage()`)
+- **Zero Workflow Disruption**: Reply tracking is completely additive and doesn't modify existing behavior
+- **No OpenAI Usage**: Replies are processed without AI classification to save costs
+- **Idempotent Operations**: Duplicate reply protection prevents data corruption
+- **Production Safe**: Comprehensive error handling and logging
+
+### How It Works
+
+1. **Broadcast Message Storage**: All outgoing broadcasts are stored with their WhatsApp message ID
+2. **Reply Detection**: When a 1-to-1 message arrives, the system checks if it's a reply using `message.hasQuotedMsg`
+3. **Original Message Lookup**: If it's a reply, the system extracts the quoted message ID and searches for the original broadcast
+4. **Reply Storage**: Found replies are stored in the `message_replies` table with full context
+5. **Silent Processing**: Replies that don't match original broadcasts are silently ignored
+
+### Database Schema for Replies
+
+The `message_replies` table stores:
+- **Reply Information**: Who replied, when, and what they said
+- **Original Message Context**: Links back to the original broadcast
+- **Contact Details**: Sender information including name when available
+- **Timestamps**: Exact reply timing for analytics
+
+### Future Extensions
+
+This system enables:
+- **CRM Integration**: Structured data ready for CRM system integration
+- **Automated Follow-ups**: Foundation for intelligent reply automation
+- **Analytics**: Reply rates, response times, and engagement metrics
+- **Campaign Tracking**: Multi-broadcast campaign performance analysis
 
 ## Range Detection
 
@@ -425,13 +634,36 @@ Check:
 2. Supabase connection is working (check /health endpoint)
 3. Message classification was correct (check ignored_messages table)
 
+## Technology Stack
+
+### Backend
+- **Runtime**: Node.js 18+
+- **Framework**: Express.js
+- **Language**: JavaScript (ES Modules)
+- **Database**: Supabase (PostgreSQL)
+- **AI**: OpenAI API (GPT-4o-mini)
+- **WhatsApp**: whatsapp-web.js
+- **Validation**: Zod
+- **Process Management**: PM2
+
+### Frontend
+- **Framework**: React 18
+- **Language**: TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **Routing**: React Router DOM
+- **HTTP Client**: Axios
+- **Database Client**: Supabase JS
+
 ## Development Notes
 
-- All code is JavaScript (no TypeScript)
-- Uses Express.js for HTTP handling
-- Uses Supabase JS client for database operations
-- Uses Zod for validation (schema validation only, not enforcement)
-- Follows functional composition pattern for pipeline
+- Backend uses JavaScript with ES modules
+- Frontend uses TypeScript for type safety
+- Follows functional composition pattern for pipeline processing
+- Uses environment-based configuration
+- Implements comprehensive error handling and logging
+- Designed for 24/7 operation with automatic recovery
 
 ## Future Enhancements
 
@@ -440,7 +672,10 @@ Check:
 - Confidence threshold filtering
 - Custom prompt templating
 - Message deduplication
-- Advanced analytics
+- Advanced analytics and reporting
+- Mobile app development
+- Multi-language support
+- Integration with other messaging platforms
 
 ## License
 

@@ -1,0 +1,122 @@
+const SYSTEM_PROMPT = `
+You extract structured JSON from WhatsApp wholesale electronics messages.
+
+ABSOLUTE RULES:
+- Output VALID JSON only
+- No explanations, no markdown
+- Never guess or infer
+- Unknown → null
+- Missing colors → {}
+- Penalize ambiguity honestly
+
+INTENT PRIORITY (MANDATORY):
+- If message contains "want to buy", "need", "required", "chahiye", "wtb" → message_type = lead
+- If message contains "available", "stock", "pcs @", "ready", "fresh stock", "wts" → message_type = offering
+- If both buyer and seller terms exist, buyer (lead) takes priority
+- If product list exists without prices → still business_message
+
+STRUCTURE:
+- Use "items[]" when multiple sellable SKUs exist
+- Each item = ONE sellable SKU
+
+RAM / STORAGE:
+- Pattern X/Y → RAM=X, STORAGE=Y
+- "256GB" alone → storage
+- Never treat storage as RAM
+
+PRICE:
+- Range → price=null, price_min, price_max
+- Single → price=value and min=max=value
+- Missing → all null
+
+QUANTITY:
+- Range → quantity=null, quantity_min, quantity_max
+- Single → quantity=value and min=max=value
+- Missing → all null
+
+COLOR SPLIT (IMPORTANT):
+- If colors have quantities, create SEPARATE items per color
+- Each item contains ONLY its color and quantity
+
+TOP-LEVEL FIELDS (ONLY if common to all items):
+- brand, condition, gst, dispatch
+
+ITEM FIELDS:
+- brand, model, variant, ram, storage, colors
+- price, price_min, price_max
+- quantity, quantity_min, quantity_max
+- dispatch
+
+CONFIDENCE:
+- Single clear item → 0.80–0.90
+- Multiple items or ranges → 0.60–0.75
+- Heavy ambiguity → 0.50–0.60
+`;
+
+
+export const openaiUnderstanding = async (payload) => {
+  try {
+    // Deduplication: Check if message already processed
+    const wa_message_id = payload.body?.wa_message_id || 'unknown';
+    if (await isMessageAlreadyProcessed(wa_message_id)) {
+      logger.info('Message already processed, skipping OpenAI call', { wa_message_id });
+      return {
+        ...payload,
+        openai_error: 'Message already processed',
+        output: []
+      };
+    }
+
+    // Mark as processed to prevent duplicate calls
+    markMessageAsProcessed(wa_message_id);
+
+    const config = getOpenAIConfig();
+    const analysisText = payload.body?.raw_text ?? '';
+    const sender = payload.body?.sender || 'unknown';
+    const chatId = payload.body?.chat_id || 'unknown';
+    const chatType = payload.body?.chat_type || 'unknown';
+    const rawText = (payload.body?.raw_text || '').slice(0, 1500);
+
+    const userPrompt = `
+Extract structured JSON for this message:
+
+"""${rawText}"""
+
+Return JSON EXACTLY matching this schema:
+
+{
+  "is_business_message": true | false,
+  "message_type": "lead" | "offering" | "noise",
+  "actor_type": "dealer" | "distributor" | "unknown",
+  "brand": null,
+  "condition": "fresh" | "used" | "unknown" | null,
+  "gst": true | false | null,
+  "dispatch": "today" | "tomorrow" | "unknown" | null,
+  "items": [
+    {
+      "brand": null,
+      "model": null,
+      "variant": null,
+      "ram": null,
+      "storage": null,
+      "colors": {},
+      "price": null,
+      "price_min": null,
+      "price_max": null,
+      "quantity": null,
+      "quantity_min": null,
+      "quantity_max": null,
+      "dispatch": null
+    }
+  ],
+  "confidence": 0.0,
+  "source": {
+    "sender": "${sender}",
+    "chat_id": "${chatId}",
+    "chat_type": "${chatType}",
+    "raw_message": "${rawText}"
+  }
+}
+
+Output JSON ONLY.
+`;
