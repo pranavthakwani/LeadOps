@@ -25,5 +25,7 @@ export const DISPATCH_TYPES = {
 export const DB_TABLES = {
   DEALER_LEADS: 'dealer_leads',
   DISTRIBUTOR_OFFERINGS: 'distributor_offerings',
-  IGNORED_MESSAGES: 'ignored_messages'
+  IGNORED_MESSAGES: 'ignored_messages',
+  MESSAGE_REPLIES: 'message_replies',
+  OPENAI_USAGE_LOGS: 'openai_usage_logs'
 };

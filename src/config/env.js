@@ -1,8 +1,10 @@
 const validateEnv = () => {
   const required = [
-    'SUPABASE_URL',
-    'SUPABASE_ANON_KEY',
-    'SUPABASE_SERVICE_ROLE_KEY',
+    'SQLSERVER_USER',
+    'SQLSERVER_PASSWORD',
+    'SQLSERVER_SERVER',
+    'SQLSERVER_DATABASE',
+    'SQLSERVER_PORT',
     'OPENAI_API_KEY',
     'OPENAI_MODEL',
     'OPENAI_MAX_TOKENS',
@@ -22,6 +24,25 @@ export const getEnv = () => {
   validateEnv();
 
   return {
+    sqlserver: {
+      user: process.env.SQLSERVER_USER,
+      password: process.env.SQLSERVER_PASSWORD,
+      server: process.env.SQLSERVER_SERVER,
+      database: process.env.SQLSERVER_DATABASE,
+      port: parseInt(process.env.SQLSERVER_PORT, 10),
+      options: {
+        encrypt: process.env.SQLSERVER_ENCRYPT === 'true',
+        enableArithAbort: process.env.SQLSERVER_ENABLE_ARITH_ABORT === 'true',
+        trustServerCertificate: process.env.SQLSERVER_TRUST_SERVER_CERT === 'true',
+        requestTimeout: parseInt(process.env.SQLSERVER_REQUEST_TIMEOUT || '600000', 10)
+      },
+      pool: {
+        max: parseInt(process.env.SQLSERVER_POOL_MAX || '10', 10),
+        min: parseInt(process.env.SQLSERVER_POOL_MIN || '0', 10),
+        idleTimeoutMillis: parseInt(process.env.SQLSERVER_POOL_IDLE_TIMEOUT || '30000', 10)
+      }
+    },
+    // Keep Supabase config for potential future use or migration
     supabase: {
       url: process.env.SUPABASE_URL,
       anonKey: process.env.SUPABASE_ANON_KEY,

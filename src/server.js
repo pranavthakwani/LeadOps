@@ -1,4 +1,4 @@
-import { initSupabase } from './config/supabase.js';
+import { initSQLServer } from './config/sqlserver.js';
 import { initOpenAI } from './config/openai.js';
 import { initWhatsAppConfig } from './config/whatsapp.js';
 import { getEnv } from './config/env.js';
@@ -13,7 +13,7 @@ const start = () => {
     const env = getEnv();
 
     logger.info('Initializing configurations');
-    initSupabase();
+    initSQLServer();
     initOpenAI();
     initWhatsAppConfig();
     

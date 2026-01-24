@@ -16,7 +16,7 @@ LeadOps is a production-grade system that:
 ### Backend (Node.js/Express)
 - **WhatsApp Integration**: Real-time message listening via whatsapp-web.js
 - **AI Processing**: OpenAI-powered message classification and data extraction
-- **Database**: Supabase for data persistence
+- **Database**: SQL Server for data persistence
 - **API**: RESTful endpoints for frontend integration
 
 ### Frontend (React/TypeScript)
@@ -34,7 +34,7 @@ LeadOps is a production-grade system that:
 - **Multi-Item Support**: Handles messages with multiple product variants in a single message
 - **Range Detection**: Automatic parsing of price and quantity ranges
 - **Brand Normalization**: Fuzzy matching against canonical brand list with automatic correction
-- **Database Persistence**: Direct integration with Supabase for all classifications
+- **Database Persistence**: Direct integration with SQL Server for all classifications
 - **Webhook Support**: HTTP endpoint for external integrations
 - **Broadcast Detection**: Identifies and processes business broadcast messages appropriately
 
@@ -108,7 +108,21 @@ LeadOps/
 Create a `.env` file in the project root with the following variables:
 
 ```env
-# Supabase Configuration
+# SQL Server Configuration
+SQLSERVER_USER=KORE
+SQLSERVER_PASSWORD=Kore@321
+SQLSERVER_SERVER=182.16.16.21
+SQLSERVER_DATABASE=Kore_Demo
+SQLSERVER_PORT=1435
+SQLSERVER_ENCRYPT=false
+SQLSERVER_ENABLE_ARITH_ABORT=true
+SQLSERVER_TRUST_SERVER_CERT=true
+SQLSERVER_REQUEST_TIMEOUT=600000
+SQLSERVER_POOL_MAX=10
+SQLSERVER_POOL_MIN=0
+SQLSERVER_POOL_IDLE_TIMEOUT=30000
+
+# Supabase Configuration (kept for backup/migration)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -129,9 +143,18 @@ LOG_LEVEL=info
 
 ### Configuration Details
 
-- **SUPABASE_URL**: Your Supabase project URL
-- **SUPABASE_ANON_KEY**: Public API key for Supabase
-- **SUPABASE_SERVICE_ROLE_KEY**: Service role key with full database access
+- **SQLSERVER_USER**: SQL Server username (default: KORE)
+- **SQLSERVER_PASSWORD**: SQL Server password (default: Kore@321)
+- **SQLSERVER_SERVER**: SQL Server IP address (default: 182.16.16.21)
+- **SQLSERVER_DATABASE**: Database name (default: Kore_Demo)
+- **SQLSERVER_PORT**: SQL Server port (default: 1435)
+- **SQLSERVER_ENCRYPT**: Whether to encrypt connection (default: false)
+- **SQLSERVER_ENABLE_ARITH_ABORT**: Enable arithmetic abort (default: true)
+- **SQLSERVER_TRUST_SERVER_CERT**: Trust server certificate (default: true)
+- **SQLSERVER_REQUEST_TIMEOUT**: Request timeout in milliseconds (default: 600000)
+- **SQLSERVER_POOL_MAX**: Maximum connection pool size (default: 10)
+- **SQLSERVER_POOL_MIN**: Minimum connection pool size (default: 0)
+- **SQLSERVER_POOL_IDLE_TIMEOUT**: Pool idle timeout in milliseconds (default: 30000)
 - **OPENAI_API_KEY**: Your OpenAI API key (must have gpt-4o-mini access)
 - **OPENAI_MODEL**: Model to use (default: gpt-4o-mini, supports any OpenAI model)
 - **OPENAI_MAX_TOKENS**: Maximum tokens per request (default: 4000)
@@ -146,7 +169,7 @@ LOG_LEVEL=info
 
 - Node.js 18.x or higher
 - npm or yarn
-- Supabase project with required tables
+- SQL Server with required tables
 - OpenAI API account with gpt-4o-mini access
 
 ### Installation
@@ -163,7 +186,7 @@ LOG_LEVEL=info
 
    Create a `.env` file in the project root with your credentials (see Environment Variables section)
 
-3. **Create Supabase tables** (if not already created):
+3. **Create SQL Server tables** (if not already created):
 
    The system expects these tables to exist:
 
@@ -174,6 +197,104 @@ LOG_LEVEL=info
    - `openai_usage_logs` - Logs OpenAI API usage and costs
 
    See Database Schema section for complete column definitions.
+
+   **SQL Server Table Creation:**
+
+   Execute the following SQL queries in your SQL Server database:
+
+   ```sql
+   -- dealer_leads table
+   CREATE TABLE dealer_leads (
+     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+     sender NVARCHAR(255) NOT NULL,
+     chat_id NVARCHAR(255) NOT NULL,
+     chat_type NVARCHAR(50) NOT NULL,
+     brand NVARCHAR(255) NULL,
+     model NVARCHAR(255) NULL,
+     variant NVARCHAR(255) NULL,
+     ram NVARCHAR(50) NULL,
+     storage NVARCHAR(50) NULL,
+     colors NVARCHAR(MAX) NULL,
+     price DECIMAL(18,2) NULL,
+     quantity INT NULL,
+     condition NVARCHAR(100) NULL,
+     gst BIT NULL,
+     dispatch NVARCHAR(255) NULL,
+     raw_message NVARCHAR(MAX) NOT NULL,
+     confidence DECIMAL(5,4) NULL,
+     created_at DATETIME2 DEFAULT GETDATE(),
+     price_min DECIMAL(18,2) NULL,
+     price_max DECIMAL(18,2) NULL,
+     quantity_min INT NULL,
+     quantity_max INT NULL
+   );
+
+   -- distributor_offerings table (same structure as dealer_leads)
+   CREATE TABLE distributor_offerings (
+     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+     sender NVARCHAR(255) NOT NULL,
+     chat_id NVARCHAR(255) NOT NULL,
+     chat_type NVARCHAR(50) NOT NULL,
+     brand NVARCHAR(255) NULL,
+     model NVARCHAR(255) NULL,
+     variant NVARCHAR(255) NULL,
+     ram NVARCHAR(50) NULL,
+     storage NVARCHAR(50) NULL,
+     colors NVARCHAR(MAX) NULL,
+     price DECIMAL(18,2) NULL,
+     quantity INT NULL,
+     condition NVARCHAR(100) NULL,
+     gst BIT NULL,
+     dispatch NVARCHAR(255) NULL,
+     raw_message NVARCHAR(MAX) NOT NULL,
+     confidence DECIMAL(5,4) NULL,
+     created_at DATETIME2 DEFAULT GETDATE(),
+     price_min DECIMAL(18,2) NULL,
+     price_max DECIMAL(18,2) NULL,
+     quantity_min INT NULL,
+     quantity_max INT NULL
+   );
+
+   -- ignored_messages table
+   CREATE TABLE ignored_messages (
+     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+     sender NVARCHAR(255) NULL,
+     chat_id NVARCHAR(255) NULL,
+     chat_type NVARCHAR(50) NULL,
+     raw_message NVARCHAR(MAX) NULL,
+     confidence DECIMAL(5,4) NULL,
+     created_at DATETIME2 DEFAULT GETDATE()
+   );
+
+   -- message_replies table
+   CREATE TABLE message_replies (
+     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+     replied_by NVARCHAR(255) NOT NULL,
+     replied_by_name NVARCHAR(255) NULL,
+     replied_message NVARCHAR(MAX) NOT NULL,
+     replied_at DATETIME2 DEFAULT GETDATE(),
+     quoted_message_id NVARCHAR(255) NOT NULL,
+     quoted_message_text NVARCHAR(MAX) NOT NULL,
+     chat_type NVARCHAR(50) NOT NULL,
+     source NVARCHAR(50) NOT NULL DEFAULT 'whatsapp'
+   );
+
+   -- openai_usage_logs table
+   CREATE TABLE openai_usage_logs (
+     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+     wa_message_id NVARCHAR(255) NULL,
+     model NVARCHAR(100) NULL,
+     input_tokens INT NULL,
+     output_tokens INT NULL,
+     total_tokens INT NULL,
+     cost_input_usd DECIMAL(10,6) NULL,
+     cost_output_usd DECIMAL(10,6) NULL,
+     cost_total_usd DECIMAL(10,6) NULL,
+     latency_ms INT NULL,
+     created_at DATETIME2 DEFAULT GETDATE(),
+     raw_message NVARCHAR(MAX) NULL
+   );
+   ```
 
 4. **Verify backend configuration**
 
@@ -640,7 +761,7 @@ Check:
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js
 - **Language**: JavaScript (ES Modules)
-- **Database**: Supabase (PostgreSQL)
+- **Database**: SQL Server
 - **AI**: OpenAI API (GPT-4o-mini)
 - **WhatsApp**: whatsapp-web.js
 - **Validation**: Zod
@@ -654,7 +775,7 @@ Check:
 - **Icons**: Lucide React
 - **Routing**: React Router DOM
 - **HTTP Client**: Axios
-- **Database Client**: Supabase JS
+- **Database Client**: mssql
 
 ## Development Notes
 

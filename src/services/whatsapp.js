@@ -114,8 +114,25 @@ class WhatsAppService {
 
         const result = await processPipeline(payload);
 
+        // Extract classification from the first processed item
+        let classification = 'unknown';
+        if (result && result.length > 0) {
+          const firstItem = result[0];
+          if (firstItem.__routeTo === 'dealer_leads') {
+            classification = 'lead';
+          } else if (firstItem.__routeTo === 'distributor_offerings') {
+            classification = 'offering';
+          } else if (firstItem.__routeTo === 'ignored_messages') {
+            classification = 'ignored';
+          } else if (firstItem.message_type) {
+            classification = firstItem.message_type;
+          }
+        }
+
         logger.info('Pipeline processed business message', {
-          classification: result?.type || 'unknown'
+          classification: classification,
+          itemsProcessed: result.length,
+          routeTo: result[0]?.__routeTo || 'unknown'
         });
 
       } catch (error) {

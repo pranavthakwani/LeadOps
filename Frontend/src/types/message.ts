@@ -1,4 +1,4 @@
-export type Classification = 'lead' | 'offering' | 'ignored';
+export type Classification = 'lead' | 'offering' | 'ignored' | 'unknown' | 'noise';
 
 export interface ParsedData {
   brand?: string;

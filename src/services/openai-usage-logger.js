@@ -1,4 +1,5 @@
-import { getSupabase } from '../config/supabase.js';
+import { getSQLPool } from '../config/sqlserver.js';
+import { DB_TABLES } from '../constants/enums.js';
 import { OPENAI_PRICING } from '../config/openai-pricing.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -83,11 +84,11 @@ export const logOpenAIUsage = async (usageData) => {
     const roundedCostOutput = Math.round(cost_output * 1000000) / 1000000;
     const roundedCostTotal = Math.round(cost_total * 1000000) / 1000000;
     
-    // Insert into database
-    const supabase = getSupabase();
-    const { error } = await supabase
-      .from('openai_usage_logs')
-      .insert({
+    // Insert into SQL Server database
+    try {
+      const pool = getSQLPool();
+      
+      const payload = {
         wa_message_id,
         model,
         input_tokens,
@@ -98,11 +99,36 @@ export const logOpenAIUsage = async (usageData) => {
         cost_total_usd: roundedCostTotal,
         latency_ms,
         raw_message: raw_message || null
+      };
+
+      // Build dynamic INSERT query based on payload
+      const columns = Object.keys(payload).filter(key => payload[key] !== null && payload[key] !== undefined);
+      const values = columns.map(key => payload[key]);
+      
+      if (columns.length === 0) {
+        getLogger().warn('No valid columns to insert for OpenAI usage log');
+        return;
+      }
+
+      const placeholders = columns.map((_, index) => `@param${index}`).join(', ');
+      const columnNames = columns.join(', ');
+      
+      const query = `
+        INSERT INTO ${DB_TABLES.OPENAI_USAGE_LOGS} (${columnNames})
+        VALUES (${placeholders})
+      `;
+
+      // Create parameterized request
+      const request = pool.request();
+      values.forEach((value, index) => {
+        request.input(`param${index}`, value);
       });
-    
-    if (error) {
-      getLogger().error('Failed to log OpenAI usage', { error, wa_message_id });
-      return;
+
+      await request.query(query);
+      
+    } catch (dbError) {
+      getLogger().error('Failed to insert OpenAI usage log to SQL Server', { error: dbError, wa_message_id });
+      // Don't rethrow - we still want to log to console
     }
     
     // Log to console with table format
@@ -119,6 +145,6 @@ export const logOpenAIUsage = async (usageData) => {
     });
     
   } catch (error) {
-    getLogger().error('Error logging OpenAI usage', { error });
+    getLogger().error('Error logging OpenAI usage to SQL Server', { error, wa_message_id: usageData.wa_message_id });
   }
 };
