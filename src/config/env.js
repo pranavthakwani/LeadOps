@@ -54,6 +54,7 @@ export const getEnv = () => {
       maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS, 10)
     },
     whatsapp: {
+      disabled: process.env.WHATSAPP_DISABLED === 'true',
       sessionPath: process.env.WHATSAPP_SESSION_PATH,
       targetBusinessName: process.env.TARGET_BUSINESS_NAME || null,
       targetGroupName: process.env.WHATSAPP_TARGET_GROUP_NAME || null,

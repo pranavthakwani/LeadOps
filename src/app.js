@@ -1,8 +1,13 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
 import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages } from './api/sqlserver-api.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const logger = createLogger('Express App');
 
@@ -16,6 +21,9 @@ export const createApp = () => {
   }));
 
   app.use(express.json());
+
+  // Serve static frontend files
+  app.use(express.static(path.join(__dirname, '../Frontend/dist')));
 
   app.get('/health', (req, res) => {
     res.json({
@@ -261,6 +269,11 @@ export const createApp = () => {
         error: error instanceof Error ? error.message : 'Internal server error'
       });
     }
+  });
+
+  // Serve frontend for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../Frontend/dist/index.html'));
   });
 
   app.use((err, req, res, next) => {
