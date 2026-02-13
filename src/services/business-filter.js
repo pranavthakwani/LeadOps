@@ -2,7 +2,61 @@ import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('BusinessFilter');
 
-// Step 1: Hard Safe Filter - Only drop clearly impossible messages
+// Step 1: Language Filter - Block non-English scripts
+function isNonEnglishLanguage(text) {
+  // Allow English script, Hinglish, Gujarati+English (all in English letters)
+  // Block Devanagari, Arabic, Chinese, Cyrillic, etc.
+  
+  // Pattern to detect non-English scripts (Devanagari, Arabic, Chinese, Cyrillic, etc.)
+  const NON_ENGLISH_SCRIPTS = /[\u0900-\u097F\u0600-\u06FF\u4E00-\u9FFF\u0400-\u04FF\u0590-\u05FF]/;
+  
+  // Allow if text contains only English letters, numbers, and common symbols
+  if (NON_ENGLISH_SCRIPTS.test(text)) {
+    return true; // Contains non-English script
+  }
+  
+  return false; // English script only
+}
+
+// Step 2: Hard System/Non-Trade Filter - Drop OTP, banking, uploads, system junk
+function isSystemOrNonTrade(text) {
+  const t = text.toLowerCase();
+
+  const SYSTEM_PATTERNS = [
+    'otp',
+    'verification code',
+    'successfully processed',
+    'uploaded',
+    'processing your data',
+    'transaction',
+    'credited',
+    'debited',
+    'bank',
+    'upi',
+    'payment',
+    'balance',
+    'invoice generated',
+    'report generated',
+    'cron job',
+    'api response',
+    'server started',
+    'error:',
+    'exception:',
+    'http://',
+    'https://'
+  ];
+
+  if (SYSTEM_PATTERNS.some(p => t.includes(p))) {
+    return true;
+  }
+
+  // Pure numeric transaction style messages
+  if (/^\d{6,}$/.test(t.trim())) return true;
+
+  return false;
+}
+
+// Step 2: Hard Safe Filter - Only drop clearly impossible messages
 function isObviouslyNonBusiness(text) {
   if (!text) return true;
 
@@ -47,8 +101,8 @@ const PRODUCT_CATEGORY = [
   'airpods','watch'
 ];
 
-// Model / Variant Signals (VERY LOOSE - allow false positives)
-const MODEL_PATTERN = /\b[a-z]?\d{1,3}[a-z]?\b/i; // 13, A13, Z10x, F27
+// Model / Variant Signals (TIGHTENED - only with brand context)
+const MODEL_PATTERN = /\b[a-z]{0,3}\d{1,3}[a-z]{0,3}\b/i; // 13, A13, Z10x, F27
 
 // RAM / ROM / Variant
 const MEMORY_PATTERN = /\b\d{1,2}\s?[\/:-]\s?\d{2,3}\b/; // 8/128
@@ -74,28 +128,42 @@ const WHOLESALE_SLANG = [
   'hai','lelo','office','godown'
 ];
 
-// Multi-line / List Structure Signal (VERY IMPORTANT)
+// Multi-line / List Structure Signal (IMPROVED - requires structured trading)
 function looksLikeStockList(text) {
   const lines = text.split('\n').filter(l => l.trim().length > 0);
-  if (lines.length < 2) return false;
+  if (lines.length < 3) return false;
 
-  let hits = 0;
+  let validLines = 0;
+
   for (const line of lines) {
+    const l = line.toLowerCase();
+
     if (
-      MODEL_PATTERN.test(line) ||
-      MEMORY_PATTERN.test(line) ||
-      PRICE_PATTERN.test(line) ||
-      BARE_PRICE_PATTERN.test(line)
+      (MEMORY_PATTERN.test(l) || MODEL_PATTERN.test(l)) &&
+      (PRICE_PATTERN.test(l) || BARE_PRICE_PATTERN.test(l) || QTY_PATTERN.test(l))
     ) {
-      hits++;
+      validLines++;
     }
   }
-  return hits >= 2;
+
+  return validLines >= 2;
 }
 
 // Step 3: Confidence Accumulator (designed to never miss)
 export function isBusinessMessage(text) {
   try {
+    // LANGUAGE FILTER FIRST - Block non-English scripts
+    if (isNonEnglishLanguage(text)) {
+      logger.debug('Filtered out non-English language message', { text: text.substring(0, 50) });
+      return false;
+    }
+
+    // HARD NEGATIVE FILTER FIRST - Drop system junk immediately
+    if (isSystemOrNonTrade(text)) {
+      logger.debug('Filtered out system/non-trade message', { text: text.substring(0, 50) });
+      return false;
+    }
+
     if (isObviouslyNonBusiness(text)) {
       logger.debug('Filtered out obviously non-business message', { text: text.substring(0, 50) });
       return false;
@@ -123,8 +191,8 @@ export function isBusinessMessage(text) {
       signals.push('product-category');
     }
 
-    // Model-like tokens
-    if (MODEL_PATTERN.test(t)) {
+    // Model-like tokens (TIGHTENED - only with brand)
+    if (MODEL_PATTERN.test(t) && BRANDS.some(b => t.includes(b))) {
       score += 2;
       signals.push('model');
     }
@@ -147,7 +215,7 @@ export function isBusinessMessage(text) {
       signals.push('price');
     } else if (
       BARE_PRICE_PATTERN.test(t) &&
-      (MEMORY_PATTERN.test(t) || MODEL_PATTERN.test(t))
+      (MEMORY_PATTERN.test(t) && BRANDS.some(b => t.includes(b)))
     ) {
       score += 2;
       signals.push('bare-price');
@@ -171,12 +239,18 @@ export function isBusinessMessage(text) {
       signals.push('list-structure');
     }
 
+    // Structure boost for multiline wholesale lists
+    if (text.split('\n').length >= 4) {
+      score += 1;
+      signals.push('multiline');
+    }
+
     /*
       CRITICAL RULE:
-      We keep threshold LOW to avoid misses.
-      Score >= 3 = Send to pipeline
+      Raised threshold to reduce false positives
+      Score >= 4 = Send to pipeline
     */
-    const isBusiness = score >= 3;
+    const isBusiness = score >= 4;
 
     logger.debug('Business message analysis', {
       score,
