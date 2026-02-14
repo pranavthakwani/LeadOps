@@ -5,6 +5,7 @@ import { getMessage } from '../services/api';
 import { openWhatsApp, formatPhoneNumber } from '../services/whatsapp';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
+import { OfferingCard } from '../components/common/DetailCard';
 import { Loader } from '../components/common/Loader';
 import type { Message } from '../types/message';
 
@@ -79,6 +80,11 @@ export const MessageDetail: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-6">
         <div className="space-y-6">
+          {/* Offering Card */}
+          {message.parsedData && (
+            <OfferingCard message={message} />
+          )}
+
           <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Message Details</h2>

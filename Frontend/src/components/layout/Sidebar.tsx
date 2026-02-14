@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Users, Settings, Search, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, Inbox, Users, Settings, Search, Moon, Sun, GripVertical } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const navItems = [
@@ -13,12 +13,58 @@ const navItems = [
 
 export const Sidebar: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const [sidebarWidth, setSidebarWidth] = useState(256); // Default width (w-64)
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      
+      const newWidth = e.clientX;
+      const maxWidth = window.innerWidth / 2; // Half screen width
+      const minWidth = 200; // Minimum width
+      
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setSidebarWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing]);
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex flex-col">
+    <aside 
+      ref={sidebarRef}
+      style={{ width: `${sidebarWidth}px` }}
+      className="bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex flex-col relative"
+    >
       <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">JJE</h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">WhatsApp Trading System</p>
+        <div className="flex flex-col items-center gap-3">
+          <img 
+            src="/assets/JJEfav.png" 
+            alt="JJE Logo"
+            className="w-16 h-16 object-contain border border-gray-900 dark:border-gray-100 rounded-lg"
+          />
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Lead Ops</h1>
+        </div>
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
@@ -28,15 +74,17 @@ export const Sidebar: React.FC = () => {
             to={item.to}
             end={item.to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              `flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
                 isActive
                   ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-medium border border-emerald-200 dark:border-emerald-800'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900/50'
               }`
             }
           >
-            <item.icon className="w-5 h-5" />
-            <span>{item.label}</span>
+            <div className="flex items-center gap-3">
+              <item.icon className="w-5 h-5" />
+              <span className="flex-1 text-center">{item.label}</span>
+            </div>
           </NavLink>
         ))}
       </nav>
@@ -65,6 +113,17 @@ export const Sidebar: React.FC = () => {
             </>
           )}
         </button>
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-1 bg-gray-300 dark:bg-gray-600 hover:bg-emerald-500 cursor-col-resize transition-colors"
+        onMouseDown={handleMouseDown}
+        style={{ cursor: isResizing ? 'col-resize' : 'col-resize' }}
+      >
+        <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-emerald-500 opacity-0 hover:opacity-100 transition-opacity">
+          <GripVertical className="w-3 h-3 text-white" />
+        </div>
       </div>
     </aside>
   );
