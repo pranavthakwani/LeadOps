@@ -64,16 +64,16 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
   return (
     <div
       onClick={onClick}
-      className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer"
+      className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer"
     >
-      <div className="flex items-center gap-8 pr-4">
+      <div className="flex items-center gap-6 pr-3">
         {/* Brand Logo */}
         <div className="flex-shrink-0">
           {brandLogo ? (
             <img 
               src={brandLogo} 
               alt={message.parsedData?.brand || 'Brand'}
-              className="w-24 h-24 object-contain rounded-lg bg-white dark:bg-gray-900 p-2"
+              className="w-16 h-16 object-contain rounded-lg bg-white dark:bg-gray-900 p-1"
               onError={(e) => {
                 // Fallback to brand initial if image fails
                 const target = e.target as HTMLImageElement;
@@ -83,8 +83,8 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
               }}
             />
           ) : (
-            <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg flex items-center justify-center">
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold text-2xl">
+            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg flex items-center justify-center">
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xl">
                 {message.parsedData?.brand?.charAt(0) || 'P'}
               </span>
             </div>
@@ -95,12 +95,12 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             {message.parsedData?.brand && (
-              <span className="font-semibold text-gray-900 dark:text-white">
+              <span className="font-semibold text-sm text-gray-900 dark:text-white">
                 {message.parsedData.brand}
               </span>
             )}
             {message.parsedData?.model && (
-              <span className="text-gray-600 dark:text-gray-400">
+              <span className="text-gray-600 dark:text-gray-400 text-sm">
                 {message.parsedData.model}
               </span>
             )}
@@ -108,7 +108,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
           
           {/* RAM/ROM */}
           {(message.parsedData?.ram || message.parsedData?.storage) && (
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               {message.parsedData?.ram && <span>{message.parsedData.ram}</span>}
               {message.parsedData?.ram && message.parsedData?.storage && <span> / </span>}
               {message.parsedData?.storage && <span>{message.parsedData.storage}</span>}
@@ -127,25 +127,25 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
         </div>
 
         {/* Price + Quantity */}
-        <div className="flex-shrink-0 text-right mr-3">
-          <div className="flex items-baseline justify-end gap-2 text-xl font-bold text-emerald-600 dark:text-emerald-400">
+        <div className="flex-shrink-0 text-right mr-2">
+          <div className="flex items-baseline justify-end gap-2 text-lg font-bold text-emerald-600 dark:text-emerald-400">
             
             {message.parsedData?.quantity && (
               <>
-                <span className="text-lg font-large text-gray-800 dark:text-gray-800">
+                <span className="text-sm text-gray-800 dark:text-gray-800">
                   {message.parsedData.quantity}
                 </span>
-                <span className="text-base font-medium text-gray-500 dark:text-gray-400">
-                units
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  units
                 </span>
               </>
             )}
 
             {message.parsedData?.price && (
               <span>
-                <span className="text-large text-gray-500 dark:text-gray-400">@</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">@</span>
                 ₹{message.parsedData.price.toLocaleString('en-IN')}
-                <span className="text-sm text-gray-500 dark:text-gray-400">/-</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">/-</span>
               </span>
             )}
           </div>
@@ -165,7 +165,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
       </div>
 
       {/* Sender Info */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
           <span className="font-medium">{message.sender}</span>
           <span>•</span>

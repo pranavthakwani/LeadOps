@@ -189,7 +189,18 @@ export const getMessages = async (type?: Classification): Promise<Message[]> => 
   }
 };
 
-export const getMessage = async (id: string): Promise<Message | null> => {
+export const getMessageById = async (id: string): Promise<Message | null> => {
+  try {
+    const response = await api.get(`/api/messages/${id}`);
+    return response.data.data || null;
+  } catch (error) {
+    console.error('Error fetching message:', error);
+    return null; // Return null instead of throwing
+  }
+};
+
+// New function to get message by ID (handles both string and numeric IDs)
+export const getMessageByIdNew = async (id: string): Promise<Message | null> => {
   try {
     const response = await api.get(`/api/messages/${id}`);
     return response.data.data || null;
@@ -291,6 +302,23 @@ export const searchProducts = async (params: {
     return {
       products: [],
       total: 0,
+    };
+  }
+};
+
+export const sendMessage = async (data: {
+  jid: string;
+  message: string;
+  replyToMessageId?: string;
+}): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await api.post('/api/reply', data);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending message:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to send message'
     };
   }
 };

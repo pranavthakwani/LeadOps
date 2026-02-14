@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Tag } from 'lucide-react';
-import { getMessage } from '../services/api';
-import { openWhatsApp, formatPhoneNumber } from '../services/whatsapp';
+import { ArrowLeft } from 'lucide-react';
+import { getMessageByIdNew } from '../services/api';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
+import { ChatInterface } from '../components/chat/ChatInterface';
 import { Loader } from '../components/common/Loader';
 import type { Message } from '../types/message';
 
@@ -14,33 +14,17 @@ export const MessageDetail: React.FC = () => {
   const navigate = useNavigate();
   const [message, setMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(true);
-  const [note, setNote] = useState('');
-
-  const getColorDisplay = (color: string | Record<string, number> | undefined) => {
-    if (!color) return null;
-    
-    if (typeof color === 'string') {
-      return { name: color, value: color };
-    }
-    
-    // Handle JSON format like {"Orange": 6}
-    const colorKeys = Object.keys(color);
-    if (colorKeys.length > 0) {
-      const colorName = colorKeys[0];
-      return { name: colorName, value: colorName };
-    }
-    
-    return null;
-  };
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Default 50%
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchMessage = async () => {
       if (!id) return;
 
       try {
-        const data = await getMessage(id);
+        const data = await getMessageByIdNew(id);
         setMessage(data);
-        setNote(data?.note || '');
       } catch (error) {
         console.error('Failed to fetch message', error);
       } finally {
@@ -51,195 +35,124 @@ export const MessageDetail: React.FC = () => {
     fetchMessage();
   }, [id]);
 
-  const colorDisplay = getColorDisplay(message?.parsedData?.color);
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+      
+      // Constrain between 20% and 80%
+      const constrainedWidth = Math.max(20, Math.min(80, newLeftWidth));
+      setLeftPanelWidth(constrainedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   if (loading) {
-    return <Loader text="Loading message..." />;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader />
+      </div>
+    );
   }
 
   if (!message) {
     return (
-      <div className="p-8">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Message not found</h2>
-          <Button onClick={() => navigate('/inbox')}>Back to Inbox</Button>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Message not found</h2>
+          <Button onClick={() => navigate('/inbox')}>
+            Back to Inbox
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span className="font-medium">Back</span>
-      </button>
-
-      <div className="grid grid-cols-2 gap-6">
-        <div className="space-y-6">
-          {/* Offering Card */}
-          {message.parsedData && (
-            <OfferingCard message={message} />
-          )}
-
-          <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Message Details</h2>
-              <ClassificationBadge classification={message.classification} />
+    <div className="h-[calc(95vh-20px)] flex flex-col bg-gray-50 dark:bg-black overflow-hidden">
+      {/* Main Content - Takes Full Height */}
+      <div className="flex flex-1 overflow-hidden" ref={containerRef}>
+        {/* Left Panel - Resizable Width */}
+        <div 
+          className="overflow-y-auto border-r border-gray-200 dark:border-gray-800"
+          style={{ width: `${leftPanelWidth}%` }}
+        >
+          <div className="p-3">
+            {/* Top Controls */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => navigate(-1)}
+                className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+              
+              <div className="flex items-center gap-3">
+                <ClassificationBadge classification={message.classification} />
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {new Date(message.timestamp).toLocaleString()}
+                </span>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sender</label>
-                <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">{message.sender}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{formatPhoneNumber(message.senderNumber)}</p>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Classification</label>
-                <p className="text-base text-gray-900 dark:text-white mt-1 capitalize">
-                  {message.classification}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Detected Brands</label>
-                <p className="text-base text-gray-900 dark:text-white mt-1">
-                  {message.detectedBrands.length > 0 ? message.detectedBrands.join(', ') : 'None'}
-                </p>
-              </div>
-
-              {message.detectedBrands.length > 0 && (
+            <div className="space-y-3">
+              {/* Offering Card */}
+              {message.parsedData && (
                 <div>
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                    Detected Brands
-                  </label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {message.detectedBrands.map((brand) => (
-                      <span
-                        key={brand}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 rounded-full text-sm font-medium border border-emerald-200 dark:border-emerald-800"
-                      >
-                        <Tag className="w-3 h-3" />
-                        {brand}
-                      </span>
-                    ))}
-                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
+                  <OfferingCard message={message} />
                 </div>
               )}
-            </div>
-          </div>
 
-          {message.parsedData && (
-            <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Parsed Data</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {message.parsedData.brand && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Brand</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.brand}</p>
-                  </div>
-                )}
-                {message.parsedData.model && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Model</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.model}</p>
-                  </div>
-                )}
-                {message.parsedData.ram && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">RAM</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.ram}</p>
-                  </div>
-                )}
-                {message.parsedData.storage && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Storage</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.storage}</p>
-                  </div>
-                )}
-                {colorDisplay && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Color</label>
-                    <div className="flex items-center gap-3 mt-1">
-                      <div 
-                        className="w-6 h-6 rounded border border-gray-300 dark:border-gray-600"
-                        style={{ backgroundColor: colorDisplay.value }}
-                      />
-                      <span className="text-base text-gray-900 dark:text-white">{colorDisplay.name}</span>
-                    </div>
-                  </div>
-                )}
-                {message.parsedData.quantity && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Quantity</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.quantity} units</p>
-                  </div>
-                )}
-                {message.parsedData.price && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Price</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">
-                      ₹{message.parsedData.price.toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                )}
-                {message.parsedData.gst && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">GST</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.gst}</p>
-                  </div>
-                )}
-                {message.parsedData.dispatch && (
-                  <div className="col-span-2">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Dispatch</label>
-                    <p className="text-base text-gray-900 dark:text-white mt-1">{message.parsedData.dispatch}</p>
-                  </div>
-                )}
-              </div>
             </div>
-          )}
-
-          <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Internal Note</label>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Add your notes here..."
-              className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-400 focus:border-transparent resize-none placeholder-gray-500 dark:placeholder-gray-400"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Notes are stored locally</p>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Actions</h2>
-            <div className="space-y-3">
-              <Button
-                className="w-full flex items-center justify-center gap-2"
-                onClick={() => openWhatsApp(message.whatsappDeepLink)}
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open in WhatsApp
-              </Button>
-              <Button variant="secondary" className="w-full">
-                Reclassify Message
-              </Button>
-            </div>
+        {/* Resizable Divider */}
+        <div
+          className="w-1 bg-gray-300 dark:bg-gray-600 hover:bg-emerald-500 dark:hover:bg-emerald-400 cursor-col-resize transition-colors group"
+          onMouseDown={handleMouseDown}
+        >
+          <div className="h-full w-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="w-1 h-8 bg-emerald-500 dark:bg-emerald-400 rounded-full"></div>
           </div>
+        </div>
 
-          <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Raw Message</h2>
-            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <pre className="text-sm text-gray-800 dark:text-gray-300 whitespace-pre-wrap font-mono">
-                {message.rawMessage}
-              </pre>
-            </div>
-          </div>
+        {/* Right Panel - True WhatsApp Layout */}
+        <div 
+          className="flex flex-col bg-[#efeae2] dark:bg-black"
+          style={{ width: `${100 - leftPanelWidth}%` }}
+        >
+          <ChatInterface message={message} />
         </div>
       </div>
     </div>

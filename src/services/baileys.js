@@ -33,6 +33,7 @@ class BaileysService {
     this.authState = null;
     this.qrEmitted = false;
     this.isPairing = false;
+    this.sentMessages = new Map(); // Track sent messages for read receipts
     
     // Initialize config first
     initWhatsAppConfig();
@@ -206,7 +207,11 @@ class BaileysService {
     this.isConnecting = false;
     this.retryCount = 0; // Reset retry count on successful connection
     this.qrEmitted = false; // Reset QR flag for next session
-    this.isPairing = false; // Clear pairing flag
+    
+    // Setup read receipt tracking
+    this.setupReadReceiptTracking();
+    
+    logger.info('✅ WhatsApp connection established and read receipt tracking enabled'); // Clear pairing flag
     
     logger.info('🎉 WhatsApp connection is OPEN and ready!');
     logger.info('📱 WhatsApp bot is now ready to listen for messages!');
@@ -452,6 +457,122 @@ class BaileysService {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
+    }
+  }
+
+  async sendReply(jid, text, replyToMessageId = null) {
+    if (!this.sock || !this.isConnected) return { success: false, error: 'WhatsApp not connected' };
+    
+    try {
+      let messageOptions = { text };
+      
+      // Add quoted message if replying
+      if (replyToMessageId) {
+        messageOptions.quoted = { 
+          key: { remoteJid: jid, id: replyToMessageId } 
+        };
+      }
+
+      const result = await this.sock.sendMessage(jid, messageOptions);
+      
+      // Store message for read receipt tracking
+      this.sentMessages.set(result.key.id, {
+        jid,
+        text,
+        timestamp: new Date(),
+        status: 'sent'
+      });
+
+      logger.info('Message sent via WhatsApp', {
+        messageId: result.key.id,
+        jid,
+        text: text.substring(0, 50) + '...'
+      });
+
+      return { 
+        success: true, 
+        waMessageId: result.key.id 
+      };
+    } catch (error) {
+      logger.error('Failed to send WhatsApp reply', error);
+      return { 
+        success: false, 
+        error: error.message 
+      };
+    }
+  }
+
+  // Initialize read receipt tracking
+  setupReadReceiptTracking() {
+    if (!this.sock) return;
+
+    // Listen for message updates (including read receipts)
+    this.sock.ev.on('messages.update', async (updates) => {
+      for (const { key, update } of updates) {
+        if (key.id && this.sentMessages.has(key.id)) {
+          const sentMessage = this.sentMessages.get(key.id);
+          
+          // Update message status based on WhatsApp update
+          if (update.status === 'read') {
+            sentMessage.status = 'read';
+            logger.info('Message read', {
+              messageId: key.id,
+              jid: key.remoteJid,
+              readAt: new Date()
+            });
+            
+            // Update database and emit WebSocket
+            await this.updateMessageStatusInDB(key.id, 3);
+          } else if (update.status === 'delivery') {
+            sentMessage.status = 'delivered';
+            logger.info('Message delivered', {
+              messageId: key.id,
+              jid: key.remoteJid
+            });
+            
+            await this.updateMessageStatusInDB(key.id, 2);
+          }
+        }
+      }
+    });
+
+    // Listen for specific read receipt updates
+    this.sock.ev.on('message-receipt.update', async (updates) => {
+      for (const receipt of updates) {
+        if (receipt.key.id && this.sentMessages.has(receipt.key.id)) {
+          const sentMessage = this.sentMessages.get(receipt.key.id);
+          
+          if (receipt.receiptType === 'read') {
+            sentMessage.status = 'read';
+            logger.info('Read receipt received', {
+              messageId: receipt.key.id,
+              jid: receipt.key.remoteJid,
+              timestamp: receipt.receiptTimestamp
+            });
+            
+            await this.updateMessageStatusInDB(receipt.key.id, 3);
+          } else if (receipt.receiptType === 'delivery') {
+            sentMessage.status = 'delivered';
+            await this.updateMessageStatusInDB(receipt.key.id, 2);
+          }
+        }
+      }
+    });
+  }
+
+  // Update message status in database and emit WebSocket
+  async updateMessageStatusInDB(messageId, status) {
+    try {
+      // This would call the database update function
+      // For now, we'll emit a WebSocket event
+      if (typeof global !== 'undefined' && global.io) {
+        global.io.emit('message-status-update', {
+          messageId,
+          status
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to update message status', error);
     }
   }
 

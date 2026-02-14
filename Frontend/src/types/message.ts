@@ -44,6 +44,7 @@ export interface Message {
   parsedData?: ParsedData;
   whatsappDeepLink: string;
   note?: string;
+  fromMe?: boolean;
 }
 
 export interface Contact {

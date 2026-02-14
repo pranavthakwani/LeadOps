@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
 import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages } from './api/sqlserver-api.js';
+import { baileysService } from './services/baileys.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -244,6 +245,123 @@ export const createApp = () => {
     }
   });
 
+  // Reply endpoint for WhatsApp messages
+  app.post('/api/reply', async (req, res) => {
+    try {
+      const { jid, message, replyToMessageId } = req.body;
+
+      // Validate input
+      if (!jid) {
+        return res.status(400).json({
+          success: false,
+          error: 'JID is required'
+        });
+      }
+
+      if (!message || message.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          error: 'Message cannot be empty'
+        });
+      }
+
+      // Reject broadcast JIDs
+      if (jid.includes('@broadcast')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot reply to broadcast messages'
+        });
+      }
+
+      // Reject group JIDs for now
+      if (jid.includes('@g.us')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot reply to group messages'
+        });
+      }
+
+      // Check for LID JID (unstable)
+      const isLid = jid.includes('@lid');
+      if (isLid) {
+        logger.warn('Reply to LID JID detected', { jid, message: 'Unstable identity' });
+      }
+
+      // Send reply via Baileys
+      const result = await baileysService.sendReply(jid, message, replyToMessageId);
+
+      if (result.success) {
+        logger.info('Reply sent successfully', { 
+          jid, 
+          message: message.substring(0, 50) + '...',
+          replyToMessageId,
+          waMessageId: result.waMessageId,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Update message status in database
+        await updateMessageStatus(result.waMessageId, 1); // status = 1 (sent)
+        
+        res.json({
+          success: true,
+          data: {
+            waMessageId: result.waMessageId
+          }
+        });
+      } else {
+        logger.error('Failed to send reply', { jid, error: result.error });
+        
+        res.status(500).json({
+          success: false,
+          error: result.error || 'Failed to send reply'
+        });
+      }
+    } catch (error) {
+      logger.error('Reply endpoint error', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Get message by ID endpoint (updated to handle string IDs)
+  app.get('/api/messages/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Validate ID - accept both string and numeric formats
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Message ID is required'
+        });
+      }
+
+      // Call the existing getMessageById function
+      const data = await getMessageById(id);
+      
+      if (!data) {
+        return res.status(404).json({
+          success: false,
+          error: 'Message not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: data
+      });
+
+    } catch (error) {
+      logger.error('Error fetching message by ID:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
   app.post('/whatsapp-ai', async (req, res) => {
     try {
       logger.info('Webhook received', { sender: req.body?.sender });
@@ -271,7 +389,36 @@ export const createApp = () => {
     }
   });
 
-  // Serve frontend for all non-API routes
+  // Initialize WebSocket server for real-time updates
+const http = require('http');
+const { Server } = require('socket.io');
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+// Make io globally available
+global.io = io;
+
+io.on('connection', (socket) => {
+  console.log('WebSocket client connected');
+  
+  socket.on('disconnect', () => {
+    console.log('WebSocket client disconnected');
+  });
+});
+
+// Start WebSocket server
+const WS_PORT = process.env.WS_PORT || 3001;
+server.listen(WS_PORT, () => {
+  console.log(`WebSocket server running on port ${WS_PORT}`);
+});
+
+// Serve frontend for all non-API routes
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../Frontend/dist/index.html'));
   });
