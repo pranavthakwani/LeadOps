@@ -28,23 +28,28 @@ LeadOps is a production-grade system that:
 ## Features
 
 ### Backend Capabilities
-- **WhatsApp Integration**: Real-time message listening via whatsapp-web.js
+- **WhatsApp Integration**: Real-time message listening via @whiskeysockets/baileys
 - **AI Classification**: OpenAI-powered message classification (lead/offering/noise)
 - **Structured Extraction**: Automatic extraction of product details (brand, model, price, quantity, etc.)
 - **Multi-Item Support**: Handles messages with multiple product variants in a single message
 - **Range Detection**: Automatic parsing of price and quantity ranges
 - **Brand Normalization**: Fuzzy matching against canonical brand list with automatic correction
 - **Database Persistence**: Direct integration with SQL Server for all classifications
-- **Webhook Support**: HTTP endpoint for external integrations
+- **REST API**: Complete RESTful endpoints for frontend integration
+- **Reply Tracking**: Native WhatsApp reply detection and conversation tracking
 - **Broadcast Detection**: Identifies and processes business broadcast messages appropriately
 
 ### Frontend Features
 - **Real-time Dashboard**: Live updates of processed messages and statistics
+- **WhatsApp-style Chat Interface**: Native WhatsApp-like messaging experience with real-time status updates
 - **Lead Management**: View and manage buyer leads with detailed information
 - **Inventory Tracking**: Monitor seller offerings and stock availability
 - **Data Visualization**: Charts and graphs for business insights
 - **Search & Filter**: Advanced filtering options for data management
-- **Responsive Design**: Mobile-friendly interface for on-the-go access
+- **Responsive Design**: Mobile-friendly interface with resizable panels
+- **Message Classification**: Visual badges for lead/offering/ignored messages
+- **Product Detail Cards**: Structured display of extracted product information
+- **Real-time WebSocket**: Live message status updates and read receipts
 
 ### Reply Tracking System
 - **Native WhatsApp Reply Detection**: Automatically detects when users reply to broadcast messages
@@ -63,9 +68,8 @@ LeadOps/
 │   │   ├── server.js              # Server entry point
 │   │   ├── config/
 │   │   │   ├── env.js               # Environment validation and configuration
-│   │   │   ├── supabase.js          # Supabase client singleton
-│   │   │   ├── openai.js            # OpenAI client configuration
-│   │   │   └── whatsapp.js          # WhatsApp configuration
+│   │   │   ├── sqlserver.js         # SQL Server connection configuration
+│   │   │   └── openai.js            # OpenAI client configuration
 │   │   ├── pipeline/               # Main processing pipeline
 │   │   │   ├── 01-normalize-text.js                 # Message normalization
 │   │   │   ├── 02-openai-understanding.js           # OpenAI API integration
@@ -81,26 +85,45 @@ LeadOps/
 │   │   ├── utils/
 │   │   │   ├── logger.js            # Logging utility
 │   │   │   └── json-parser.js       # Safe JSON parsing
+│   │   ├── api/
+│   │   │   └── sqlserver-api.js     # SQL Server API endpoints
 │   │   └── services/                # Additional service modules
-│   │   │   ├── reply-handler.js     # Reply detection and processing
-│   │   │   ├── whatsapp.js          # WhatsApp client management
-│   │   │   └── ...                  # Other service modules
+│   │       ├── reply-handler.js     # Reply detection and processing
+│   │       └── whatsapp.js          # WhatsApp client management
 │   ├── package.json                # Backend dependencies
 │   ├── ecosystem.config.cjs         # PM2 configuration
 │   └── sessions/                    # WhatsApp session storage
-│
+│   └── db/
+│       └── create-tables.sql        # SQL Server table creation script
+
 └── Frontend (React/TypeScript)
     ├── src/
     │   ├── components/              # React components
+    │   │   ├── chat/               # Chat interface components
+    │   │   ├── common/             # Shared UI components
+    │   │   ├── inbox/              # Inbox management components
+    │   │   └── layout/             # Layout components
     │   ├── pages/                   # Page components
+    │   │   ├── Dashboard.tsx       # Main dashboard page
+    │   │   ├── MessageDetail.tsx   # Message detail view
+    │   │   └── ...                 # Other pages
     │   ├── hooks/                   # Custom React hooks
-    │   ├── utils/                   # Utility functions
+    │   │   ├── useMessages.ts      # Message management hook
+    │   │   └── ...                 # Other hooks
+    │   ├── services/                # API service layer
+    │   │   └── api.ts              # Frontend API client
     │   ├── types/                   # TypeScript type definitions
+    │   │   └── message.ts          # Message type definitions
+    │   ├── contexts/                # React contexts
+    │   ├── app/                     # App-specific components
+    │   ├── App.tsx                  # Main App component
     │   └── main.tsx                 # Application entry point
     ├── public/                      # Static assets
+    │   └── assets/                  # Static assets (brands, favicons)
     ├── package.json                # Frontend dependencies
     ├── vite.config.ts              # Vite configuration
-    └── tailwind.config.js          # Tailwind CSS configuration
+    ├── tailwind.config.js          # Tailwind CSS configuration
+    └── eslint.config.js            # ESLint configuration
 ```
 
 ## Environment Variables
@@ -200,101 +223,22 @@ LOG_LEVEL=info
 
    **SQL Server Table Creation:**
 
-   Execute the following SQL queries in your SQL Server database:
+   Execute the provided SQL script in your SQL Server database:
 
-   ```sql
-   -- dealer_leads table
-   CREATE TABLE dealer_leads (
-     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-     sender NVARCHAR(255) NOT NULL,
-     chat_id NVARCHAR(255) NOT NULL,
-     chat_type NVARCHAR(50) NOT NULL,
-     brand NVARCHAR(255) NULL,
-     model NVARCHAR(255) NULL,
-     variant NVARCHAR(255) NULL,
-     ram NVARCHAR(50) NULL,
-     storage NVARCHAR(50) NULL,
-     colors NVARCHAR(MAX) NULL,
-     price DECIMAL(18,2) NULL,
-     quantity INT NULL,
-     condition NVARCHAR(100) NULL,
-     gst BIT NULL,
-     dispatch NVARCHAR(255) NULL,
-     raw_message NVARCHAR(MAX) NOT NULL,
-     confidence DECIMAL(5,4) NULL,
-     created_at DATETIME2 DEFAULT GETDATE(),
-     price_min DECIMAL(18,2) NULL,
-     price_max DECIMAL(18,2) NULL,
-     quantity_min INT NULL,
-     quantity_max INT NULL
-   );
-
-   -- distributor_offerings table (same structure as dealer_leads)
-   CREATE TABLE distributor_offerings (
-     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-     sender NVARCHAR(255) NOT NULL,
-     chat_id NVARCHAR(255) NOT NULL,
-     chat_type NVARCHAR(50) NOT NULL,
-     brand NVARCHAR(255) NULL,
-     model NVARCHAR(255) NULL,
-     variant NVARCHAR(255) NULL,
-     ram NVARCHAR(50) NULL,
-     storage NVARCHAR(50) NULL,
-     colors NVARCHAR(MAX) NULL,
-     price DECIMAL(18,2) NULL,
-     quantity INT NULL,
-     condition NVARCHAR(100) NULL,
-     gst BIT NULL,
-     dispatch NVARCHAR(255) NULL,
-     raw_message NVARCHAR(MAX) NOT NULL,
-     confidence DECIMAL(5,4) NULL,
-     created_at DATETIME2 DEFAULT GETDATE(),
-     price_min DECIMAL(18,2) NULL,
-     price_max DECIMAL(18,2) NULL,
-     quantity_min INT NULL,
-     quantity_max INT NULL
-   );
-
-   -- ignored_messages table
-   CREATE TABLE ignored_messages (
-     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-     sender NVARCHAR(255) NULL,
-     chat_id NVARCHAR(255) NULL,
-     chat_type NVARCHAR(50) NULL,
-     raw_message NVARCHAR(MAX) NULL,
-     confidence DECIMAL(5,4) NULL,
-     created_at DATETIME2 DEFAULT GETDATE()
-   );
-
-   -- message_replies table
-   CREATE TABLE message_replies (
-     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-     replied_by NVARCHAR(255) NOT NULL,
-     replied_by_name NVARCHAR(255) NULL,
-     replied_message NVARCHAR(MAX) NOT NULL,
-     replied_at DATETIME2 DEFAULT GETDATE(),
-     quoted_message_id NVARCHAR(255) NOT NULL,
-     quoted_message_text NVARCHAR(MAX) NOT NULL,
-     chat_type NVARCHAR(50) NOT NULL,
-     source NVARCHAR(50) NOT NULL DEFAULT 'whatsapp'
-   );
-
-   -- openai_usage_logs table
-   CREATE TABLE openai_usage_logs (
-     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-     wa_message_id NVARCHAR(255) NULL,
-     model NVARCHAR(100) NULL,
-     input_tokens INT NULL,
-     output_tokens INT NULL,
-     total_tokens INT NULL,
-     cost_input_usd DECIMAL(10,6) NULL,
-     cost_output_usd DECIMAL(10,6) NULL,
-     cost_total_usd DECIMAL(10,6) NULL,
-     latency_ms INT NULL,
-     created_at DATETIME2 DEFAULT GETDATE(),
-     raw_message NVARCHAR(MAX) NULL
-   );
+   ```bash
+   # Run the SQL script from the db directory
+   sqlcmd -S 182.16.16.21 -U KORE -P Kore@321 -d Kore_Demo -i db/create-tables.sql
    ```
+
+   Or manually execute the `db/create-tables.sql` file which creates:
+
+   - `dealer_leads` - Stores buyer lead information
+   - `distributor_offerings` - Stores seller offering information
+   - `ignored_messages` - Stores noise/irrelevant messages
+   - `message_replies` - Tracks reply messages and conversations
+   - `openai_usage_logs` - Logs OpenAI API usage and costs
+
+   The script uses `INT IDENTITY(1,1)` for primary keys and includes proper error handling.
 
 4. **Verify backend configuration**
 
@@ -342,113 +286,109 @@ For production deployment, see the "Running with PM2" section for backend stabil
 ### dealer_leads
 
 ```sql
-CREATE TABLE public.dealer_leads (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  sender text NOT NULL,
-  chat_id text NOT NULL,
-  chat_type text NOT NULL,
-  brand text NULL,
-  model text NULL,
-  variant text NULL,
-  ram text NULL,
-  storage text NULL,
-  colors jsonb NULL,
-  price numeric NULL,
-  quantity integer NULL,
-  condition text NULL,
-  gst boolean NULL,
-  dispatch text NULL,
-  raw_message text NOT NULL,
-  confidence numeric NULL,
-  created_at timestamp with time zone NULL DEFAULT now(),
-  price_min numeric NULL,
-  price_max numeric NULL,
-  quantity_min integer NULL,
-  quantity_max integer NULL,
-  CONSTRAINT dealer_leads_pkey PRIMARY KEY (id)
-) TABLESPACE pg_default;
+CREATE TABLE dealer_leads (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    sender NVARCHAR(255) NULL,
+    chat_id NVARCHAR(255) NULL,
+    chat_type NVARCHAR(50) NULL,
+    brand NVARCHAR(100) NULL,
+    model NVARCHAR(100) NULL,
+    variant NVARCHAR(100) NULL,
+    ram INT NULL,
+    storage INT NULL,
+    colors NVARCHAR(MAX) NULL,
+    quantity INT NULL,
+    quantity_min INT NULL,
+    quantity_max INT NULL,
+    price DECIMAL(10,2) NULL,
+    price_min DECIMAL(10,2) NULL,
+    price_max DECIMAL(10,2) NULL,
+    condition NVARCHAR(20) NULL,
+    gst BIT NULL,
+    dispatch NVARCHAR(20) NULL,
+    confidence DECIMAL(3,2) NULL,
+    raw_message NVARCHAR(MAX) NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
 ```
 
 ### distributor_offerings
 
 ```sql
-CREATE TABLE public.distributor_offerings (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  sender text NOT NULL,
-  chat_id text NOT NULL,
-  chat_type text NOT NULL,
-  brand text NULL,
-  model text NULL,
-  variant text NULL,
-  ram text NULL,
-  storage text NULL,
-  colors jsonb NULL,
-  price numeric NULL,
-  quantity integer NULL,
-  condition text NULL,
-  gst boolean NULL,
-  dispatch text NULL,
-  raw_message text NOT NULL,
-  confidence numeric NULL,
-  created_at timestamp with time zone NULL DEFAULT now(),
-  price_min numeric NULL,
-  price_max numeric NULL,
-  quantity_min integer NULL,
-  quantity_max integer NULL,
-  CONSTRAINT distributor_offerings_pkey PRIMARY KEY (id)
-) TABLESPACE pg_default;
+CREATE TABLE distributor_offerings (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    sender NVARCHAR(255) NULL,
+    chat_id NVARCHAR(255) NULL,
+    chat_type NVARCHAR(50) NULL,
+    brand NVARCHAR(100) NULL,
+    model NVARCHAR(100) NULL,
+    variant NVARCHAR(100) NULL,
+    ram INT NULL,
+    storage INT NULL,
+    colors NVARCHAR(MAX) NULL,
+    quantity INT NULL,
+    quantity_min INT NULL,
+    quantity_max INT NULL,
+    price DECIMAL(10,2) NULL,
+    price_min DECIMAL(10,2) NULL,
+    price_max DECIMAL(10,2) NULL,
+    condition NVARCHAR(20) NULL,
+    gst BIT NULL,
+    dispatch NVARCHAR(20) NULL,
+    confidence DECIMAL(3,2) NULL,
+    raw_message NVARCHAR(MAX) NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
 ```
 
 ### ignored_messages
 
 ```sql
-CREATE TABLE public.ignored_messages (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  sender text NULL,
-  chat_id text NULL,
-  chat_type text NULL,
-  raw_message text NULL,
-  confidence numeric NULL,
-  created_at timestamp with time zone NULL DEFAULT now(),
-  CONSTRAINT ignored_messages_pkey PRIMARY KEY (id)
-) TABLESPACE pg_default;
+CREATE TABLE ignored_messages (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    sender NVARCHAR(255) NULL,
+    chat_id NVARCHAR(255) NULL,
+    chat_type NVARCHAR(50) NULL,
+    confidence DECIMAL(3,2) NULL,
+    raw_message NVARCHAR(MAX) NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
 ```
 
 ### message_replies
 
 ```sql
-CREATE TABLE public.message_replies (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  replied_by text NOT NULL,
-  replied_by_name text NULL,
-  replied_message text NOT NULL,
-  replied_at timestamp with time zone NULL DEFAULT now(),
-  quoted_message_id text NOT NULL,
-  quoted_message_text text NOT NULL,
-  chat_type text NOT NULL,
-  source text NOT NULL DEFAULT 'whatsapp'::text,
-  CONSTRAINT message_replies_pkey PRIMARY KEY (id)
-) TABLESPACE pg_default;
+CREATE TABLE message_replies (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    replied_by NVARCHAR(255) NULL,
+    replied_by_name NVARCHAR(255) NULL,
+    replied_message NVARCHAR(MAX) NULL,
+    replied_at DATETIME NULL,
+    quoted_message_id NVARCHAR(255) NULL,
+    quoted_message_text NVARCHAR(MAX) NULL,
+    chat_type NVARCHAR(50) NULL,
+    source NVARCHAR(50) NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
 ```
 
 ### openai_usage_logs
 
 ```sql
-CREATE TABLE public.openai_usage_logs (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  wa_message_id text NULL,
-  model text NULL,
-  input_tokens integer NULL,
-  output_tokens integer NULL,
-  total_tokens integer NULL,
-  cost_input_usd numeric NULL,
-  cost_output_usd numeric NULL,
-  cost_total_usd numeric NULL,
-  latency_ms integer NULL,
-  created_at timestamp with time zone NULL DEFAULT now(),
-  raw_message text NULL,
-  CONSTRAINT openai_usage_logs_pkey PRIMARY KEY (id)
-) TABLESPACE pg_default;
+CREATE TABLE openai_usage_logs (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    wa_message_id NVARCHAR(255) NULL,
+    model NVARCHAR(100) NULL,
+    input_tokens INT NULL,
+    output_tokens INT NULL,
+    total_tokens INT NULL,
+    cost_input_usd DECIMAL(10,6) NULL,
+    cost_output_usd DECIMAL(10,6) NULL,
+    cost_total_usd DECIMAL(10,6) NULL,
+    latency_ms INT NULL,
+    raw_message NVARCHAR(MAX) NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
 ```
 
 ## Running the Application
@@ -564,20 +504,10 @@ Response:
 }
 ```
 
-### Process WhatsApp Message
+### Get Messages
 
 ```bash
-POST /whatsapp-ai
-Content-Type: application/json
-
-{
-  "sender": "1234567890@c.us",
-  "chat_id": "1234567890@c.us",
-  "chat_type": "individual",
-  "raw_text": "Samsung S23 Ultra fresh stock 12/512 @ 89000-91000, 50 pcs available",
-  "normalized_text": "samsung s23 ultra fresh stock 12/512 @ 89000-91000, 50 pcs available",
-  "is_broadcast": false
-}
+GET /api/messages?type=all|lead|offering|ignored
 ```
 
 Response:
@@ -585,9 +515,76 @@ Response:
 ```json
 {
   "success": true,
-  "message": "Message processed",
-  "itemsProcessed": 1
+  "data": [
+    {
+      "type": "lead",
+      "id": 1,
+      "sender": "+919876543210",
+      "chat_id": "+919876543210@c.us",
+      "chat_type": "individual",
+      "brand": "Samsung",
+      "model": "S23 Ultra",
+      "ram": 12,
+      "storage": 256,
+      "quantity": 10,
+      "price": 89000,
+      "confidence": 0.85,
+      "raw_message": "Need Samsung S23 Ultra 12/256, 10 pcs @ 89k",
+      "created_at": "2024-01-06T10:30:00.000Z"
+    }
+  ]
 }
+```
+
+### Get Message by ID
+
+```bash
+GET /api/messages/:id
+```
+
+### Get Contacts
+
+```bash
+GET /api/contacts
+```
+
+### Get Dashboard Stats
+
+```bash
+GET /api/dashboard
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "leadsToday": 15,
+    "offeringsToday": 23,
+    "ignoredToday": 8,
+    "recentActivity": [...]
+  }
+}
+```
+
+### Send Message Reply
+
+```bash
+POST /api/reply
+Content-Type: application/json
+
+{
+  "jid": "+919876543210@c.us",
+  "message": "Thank you for your inquiry. We have the items in stock.",
+  "replyToMessageId": "message_id_here"
+}
+```
+
+### Search Products
+
+```bash
+GET /api/search?q=Samsung&type=lead&brand=Samsung&minPrice=50000&maxPrice=100000
 ```
 
 ## Pipeline Execution Flow
@@ -761,11 +758,12 @@ Check:
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js
 - **Language**: JavaScript (ES Modules)
-- **Database**: SQL Server
+- **Database**: Microsoft SQL Server
 - **AI**: OpenAI API (GPT-4o-mini)
-- **WhatsApp**: whatsapp-web.js
+- **WhatsApp**: @whiskeysockets/baileys
 - **Validation**: Zod
 - **Process Management**: PM2
+- **ORM**: mssql (Microsoft SQL Server driver)
 
 ### Frontend
 - **Framework**: React 18
@@ -773,9 +771,10 @@ Check:
 - **Build Tool**: Vite
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
-- **Routing**: React Router DOM
+- **Routing**: React Router DOM v7
 - **HTTP Client**: Axios
-- **Database Client**: mssql
+- **State Management**: React Hooks & Context
+- **Code Quality**: ESLint with TypeScript support
 
 ## Development Notes
 

@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
 import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages } from './api/sqlserver-api.js';
@@ -390,10 +392,7 @@ export const createApp = () => {
   });
 
   // Initialize WebSocket server for real-time updates
-const http = require('http');
-const { Server } = require('socket.io');
-
-const server = http.createServer(app);
+const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",

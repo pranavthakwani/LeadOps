@@ -3,6 +3,7 @@ module.exports = {
     {
       name: "JJE LeadOps Automation",
       script: "src/server.js",
+      node_args: "--import ./preload.js",
       instances: 1,
       exec_mode: "fork",
       watch: false,
@@ -12,6 +13,18 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         // Load .env file for production
+        SQLSERVER_USER: process.env.SQLSERVER_USER,
+        SQLSERVER_PASSWORD: process.env.SQLSERVER_PASSWORD,
+        SQLSERVER_SERVER: process.env.SQLSERVER_SERVER,
+        SQLSERVER_DATABASE: process.env.SQLSERVER_DATABASE,
+        SQLSERVER_PORT: process.env.SQLSERVER_PORT,
+        SQLSERVER_ENCRYPT: process.env.SQLSERVER_ENCRYPT,
+        SQLSERVER_ENABLE_ARITH_ABORT: process.env.SQLSERVER_ENABLE_ARITH_ABORT,
+        SQLSERVER_TRUST_SERVER_CERT: process.env.SQLSERVER_TRUST_SERVER_CERT,
+        SQLSERVER_REQUEST_TIMEOUT: process.env.SQLSERVER_REQUEST_TIMEOUT,
+        SQLSERVER_POOL_MAX: process.env.SQLSERVER_POOL_MAX,
+        SQLSERVER_POOL_MIN: process.env.SQLSERVER_POOL_MIN,
+        SQLSERVER_POOL_IDLE_TIMEOUT: process.env.SQLSERVER_POOL_IDLE_TIMEOUT,
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
