@@ -1,67 +1,144 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Reply, X } from 'lucide-react';
 import { sendMessage } from '../../services/api';
+import { chatApi } from '../../services/chatApi';
 import type { Message } from '../../types/message';
+import { io, Socket } from 'socket.io-client';
 
 interface ChatInterfaceProps {
   message: Message;
 }
 
-interface SentMessage {
-  id: string;
+interface DisplayMessage {
+  id: number | string;
   text: string;
   timestamp: Date;
-  isOutgoing: true;
+  isOutgoing: boolean;
   status: 'pending' | 'sent' | 'delivered' | 'read';
   waMessageId?: string;
+  isFromDb?: boolean;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
   const [replyText, setReplyText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
   const [showReplyModal, setShowReplyModal] = useState(false);
-  const [sentMessages, setSentMessages] = useState<SentMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
-  // WebSocket connection for real-time updates
+  // Load messages from database
   useEffect(() => {
-    // Connect to WebSocket for read receipt updates
-    const ws = new WebSocket('ws://localhost:3001');
-    wsRef.current = ws;
+    const loadMessages = async () => {
+      try {
+        setIsLoading(true);
+        const jid = message.senderNumber.includes('@') 
+          ? message.senderNumber 
+          : message.senderNumber + '@s.whatsapp.net';
+        const dbMessages = await chatApi.getMessages(jid);
+        
+        // Convert database messages to display format
+        const displayMessages: DisplayMessage[] = dbMessages.map(msg => ({
+          id: msg.id,
+          text: msg.message_text || '',
+          timestamp: new Date(Number(msg.message_timestamp)),
+          isOutgoing: msg.from_me,
+          status: 'sent', // Default status for DB messages
+          waMessageId: msg.wa_message_id,
+          isFromDb: true
+        }));
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'message-status-update') {
-        // Update message status based on read receipt
-        setSentMessages(prev => prev.map(msg => 
-          msg.waMessageId === data.messageId 
-            ? { ...msg, status: data.status }
-            : msg
-        ));
+        // Only add the original message if it's not already in the chat
+        const originalMessageId = message.id;
+        const messageExistsInDb = displayMessages.some(msg => 
+          msg.text === (message.rawMessage || '') && 
+          Math.abs(msg.timestamp.getTime() - new Date(message.timestamp).getTime()) < 5000 // Within 5 seconds
+        );
+
+        let allMessages = displayMessages;
+        if (!messageExistsInDb) {
+          const originalMessage: DisplayMessage = {
+            id: originalMessageId,
+            text: message.rawMessage || '',
+            timestamp: new Date(message.timestamp),
+            isOutgoing: false,
+            status: 'sent',
+            isFromDb: false
+          };
+          allMessages = [...displayMessages, originalMessage];
+        }
+
+        // Sort by timestamp
+        allMessages = allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        setChatMessages(allMessages);
+      } catch (error) {
+        console.error('Error loading messages:', error);
+        setSendError('Failed to load messages');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    ws.onerror = (error) => {
-      console.warn('WebSocket connection error:', error);
-    };
+    loadMessages();
+  }, [message]);
 
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
+  // Socket.IO connection for real-time updates
+  useEffect(() => {
+    const jid = message.senderNumber.includes('@') 
+      ? message.senderNumber 
+      : message.senderNumber + '@s.whatsapp.net';
+    
+    // Connect to Socket.IO
+    const socket = io('http://localhost:5100');
+    socketRef.current = socket;
+
+    // Join the same room that backend uses
+    socket.emit('join-room', jid);
+
+    // Listen for new messages
+    socket.on('new-message', (data: any) => {
+      setChatMessages(prev => {
+        // Check if message already exists (dedupe by waMessageId)
+        const exists = prev.some(msg => msg.waMessageId === data.waMessageId);
+        if (exists) return prev;
+
+        const newMessage: DisplayMessage = {
+          id: data.waMessageId,
+          text: data.message_text,
+          timestamp: new Date(Number(data.message_timestamp)),
+          isOutgoing: data.fromMe,
+          status: 'sent',
+          waMessageId: data.waMessageId,
+          isFromDb: true
+        };
+
+        return [...prev, newMessage].sort((a, b) => 
+          a.timestamp.getTime() - b.timestamp.getTime()
+        );
+      });
+    });
+
+    socket.on('connect_error', (error: any) => {
+      console.warn('Socket.IO connection error:', error);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket.IO connection closed');
+    });
 
     return () => {
-      ws.close();
+      socket.disconnect();
     };
-  }, []);
+  }, [message.senderNumber]);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [sentMessages]);
+  }, [chatMessages]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -79,7 +156,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     const tempId = `temp-${Date.now()}`;
     
     // Add message to UI immediately with pending status
-    const newMessage: SentMessage = {
+    const newMessage: DisplayMessage = {
       id: tempId,
       text: messageText,
       timestamp: new Date(),
@@ -87,7 +164,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       status: 'pending'
     };
     
-    setSentMessages(prev => [...prev, newMessage]);
+    setChatMessages(prev => [...prev, newMessage]);
     setReplyText('');
     setSendError(null);
     setIsReplying(true);
@@ -101,25 +178,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
 
       if (response.success) {
         // Update message status to sent and store WhatsApp message ID
-        setSentMessages(prev => prev.map(msg => 
+        setChatMessages(prev => prev.map(msg => 
           msg.id === tempId 
             ? { ...msg, status: 'sent', waMessageId: (response as any).data?.waMessageId }
             : msg
         ));
         
-        // In real implementation, status updates come from WebSocket
-        // For now, we'll keep it as 'sent' until real read receipts arrive
         console.log('Message sent successfully');
       } else {
         // Remove the message and show error
-        setSentMessages(prev => prev.filter(msg => msg.id !== tempId));
+        setChatMessages(prev => prev.filter(msg => msg.id !== tempId));
         setSendError(response.error || 'Failed to send message');
         // Restore the text in input
         setReplyText(messageText);
       }
     } catch (error) {
       // Remove the message and show error
-      setSentMessages(prev => prev.filter(msg => msg.id !== tempId));
+      setChatMessages(prev => prev.filter(msg => msg.id !== tempId));
       setSendError('Error sending message. Please try again.');
       // Restore the text in input
       setReplyText(messageText);
@@ -170,7 +245,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     </svg>
   );
 
-  const getStatusIcon = (status: SentMessage['status']) => {
+  const getStatusIcon = (status: DisplayMessage['status']) => {
     switch (status) {
       case 'pending':
         return <SingleTick />;
@@ -185,7 +260,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     }
   };
 
-  
   const canReply = () => {
     // Don't allow reply to own messages
     if (message.fromMe) return false;
@@ -207,7 +281,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       {/* Chat Header - WhatsApp Style */}
       <div className="h-14 px-4 flex items-center bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#e9edef] dark:border-[#2a3942]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#128c7e] dark:bg-[#005c4b]   rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center">
             <span className="text-white font-semibold text-lg">
               {message.sender?.charAt(0)?.toUpperCase() || 'U'}
             </span>
@@ -230,101 +304,78 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
 
       {/* Messages Scroll Area - WhatsApp Style */}
       <div className="flex-1 overflow-y-auto bg-[#e5ddd5] dark:bg-[#0b141a] px-4 py-4">
-        {/* Date Separator */}
-        <div className="flex justify-center mb-4">
-          <div className="bg-[#e9edef] dark:bg-[#2a3942] px-3 py-1 rounded-full">
-            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-              {new Date(message.timestamp).toLocaleDateString('en-US', { 
-                weekday: 'short', 
-                month: 'short', 
-                day: 'numeric' 
-              })}
-            </span>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="w-6 h-6 border-2 border-[#128c7e] border-t-transparent animate-spin rounded-full"></div>
           </div>
-        </div>
-
-        {/* Original Message */}
-        <div className="flex justify-start mb-2">
-          <div className="max-w-[70%]">
-            <div className="bg-white dark:bg-[#202c33] px-4 py-2 rounded-lg rounded-tl-none shadow-sm">
-              <div className="text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words text-sm">
-                {message.rawMessage}
-              </div>
-              
-              {/* Message Metadata */}
-              {message.parsedData && (
-                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                  <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                    {message.parsedData.brand && (
-                      <div><strong>Brand:</strong> {message.parsedData.brand}</div>
-                    )}
-                    {message.parsedData.model && (
-                      <div><strong>Model:</strong> {message.parsedData.model}</div>
-                    )}
-                    {message.parsedData.price && (
-                      <div><strong>Price:</strong> ₹{message.parsedData.price.toLocaleString('en-IN')}/-</div>
-                    )}
-                    {message.parsedData.quantity && (
-                      <div><strong>Quantity:</strong> {message.parsedData.quantity} units</div>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {/* Message Time */}
-              <div className="flex justify-end mt-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {new Date(message.timestamp).toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true 
-                  }).toLowerCase()}
+        ) : (
+          <>
+            {/* Date Separator */}
+            <div className="flex justify-center mb-4">
+              <div className="bg-[#e9edef] dark:bg-[#2a3942] px-3 py-1 rounded-full">
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  {new Date(message.timestamp).toLocaleDateString('en-US', { 
+                    weekday: 'short', 
+                    month: 'short', 
+                    day: 'numeric' 
+                  })}
                 </span>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Sent Messages */}
-        {sentMessages.map((sentMessage) => (
-          <div key={sentMessage.id} className="flex justify-end mb-2">
-            <div className="max-w-[70%]">
-              <div className="bg-[#dcf8c6] dark:bg-[#005c4b] px-4 py-2 rounded-lg rounded-tr-none shadow-sm">
-                <div className="text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words text-sm">
-                  {sentMessage.text}
-                </div>
-                
-                {/* Message Time and Status */}
-                <div className="flex justify-end items-center gap-1 mt-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {sentMessage.timestamp.toLocaleTimeString('en-US', { 
-                      hour: 'numeric', 
-                      minute: '2-digit',
-                      hour12: true 
-                    }).toLowerCase()}
-                  </span>
-                  <span className="flex items-center">
-                    {getStatusIcon(sentMessage.status)}
-                  </span>
+            {/* All Messages (from DB + new ones) */}
+            {chatMessages.map((chatMessage) => (
+              <div 
+                key={chatMessage.id} 
+                className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} mb-2`}
+              >
+                <div className="max-w-[70%]">
+                  <div className={`${
+                    chatMessage.isOutgoing 
+                      ? 'bg-[#dcf8c6] dark:bg-[#005c4b]' 
+                      : 'bg-white dark:bg-[#202c33]'
+                  } px-4 py-2 rounded-lg ${
+                    chatMessage.isOutgoing ? 'rounded-tr-none' : 'rounded-tl-none'
+                  } shadow-sm`}>
+                    <div className="text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words text-sm">
+                      {chatMessage.text}
+                    </div>
+                    
+                    {/* Message Time and Status */}
+                    <div className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} items-center gap-1 mt-1`}>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {chatMessage.timestamp.toLocaleTimeString('en-US', { 
+                          hour: 'numeric', 
+                          minute: '2-digit',
+                          hour12: true 
+                        }).toLowerCase()}
+                      </span>
+                      {chatMessage.isOutgoing && (
+                        <span className="flex items-center">
+                          {getStatusIcon(chatMessage.status)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
 
-        {/* Error Message */}
-        {sendError && (
-          <div className="flex justify-center mb-2">
-            <div className="bg-red-100 dark:bg-red-900/50 px-3 py-2 rounded-lg max-w-[90%]">
-              <p className="text-xs text-red-700 dark:text-red-400 text-center">
-                {sendError}
-              </p>
-            </div>
-          </div>
+            {/* Error Message */}
+            {sendError && (
+              <div className="flex justify-center mb-2">
+                <div className="bg-red-100 dark:bg-red-900/50 px-3 py-2 rounded-lg max-w-[90%]">
+                  <p className="text-xs text-red-700 dark:text-red-400 text-center">
+                    {sendError}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} />
+          </>
         )}
-
-        {/* Scroll anchor */}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area - WhatsApp Style */}

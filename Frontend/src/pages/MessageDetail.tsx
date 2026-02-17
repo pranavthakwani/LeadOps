@@ -5,6 +5,7 @@ import { getMessageByIdNew } from '../services/api';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
+import { IgnoredMessageCard } from '../components/common/IgnoredMessageCard';
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { Loader } from '../components/common/Loader';
 import type { Message } from '../types/message';
@@ -125,14 +126,18 @@ export const MessageDetail: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              {/* Offering Card */}
-              {message.parsedData && (
+              {/* Message Details - Based on Classification */}
+              {message.classification === 'ignored' ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Message Details</h3>
+                  <IgnoredMessageCard message={message} />
+                </div>
+              ) : (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
                   <OfferingCard message={message} />
                 </div>
               )}
-
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { getEnv } from './config/env.js';
 import { createApp } from './app.js';
 import { createLogger } from './utils/logger.js';
 import { baileysService } from './services/baileys.js';
+import { createSocketServer } from './sockets/socketServer.js';
 
 const logger = createLogger('Server');
 
@@ -26,9 +27,10 @@ const start = async () => {
     }
 
     const app = createApp();
+    const server = createSocketServer(app);
     const port = env.webhook.port;
 
-    app.listen(port, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', () => {
       logger.info(`Server started on port ${port}`);
       logger.info('Available endpoints:');
       logger.info(`  GET  /health`);

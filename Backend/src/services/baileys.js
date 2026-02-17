@@ -7,6 +7,7 @@ import { createLogger } from '../utils/logger.js';
 import { processPipeline } from '../pipeline/index.js';
 import { isBusinessMessage } from './business-filter.js';
 import { getEnv } from '../config/env.js';
+import { chatService } from './chatService.js';
 
 const logger = createLogger('WhatsApp');
 
@@ -177,27 +178,15 @@ class BaileysService {
     });
 
     // Message events
-    this.sock.ev.on('messages.upsert', async (events) => {
-      logger.info('📨 Message event received!', { eventType: 'messages.upsert', eventsCount: Array.isArray(events) ? events.length : 1 });
-      
-      // Ensure events is iterable (sometimes it's not an array)
-      const messageEvents = Array.isArray(events) ? events : [events];
-      
-      for (const event of messageEvents) {
-        // Extract the actual message from event.messages[0]
-        const messageData = event.messages && event.messages[0];
-        
-        if (!messageData) {
-          logger.info('❌ No message data in event');
-          continue;
+    this.sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const message of messages) {
+        // 1️⃣ Always store message in chat (mirror WhatsApp fully)
+        await chatService.storeMessage(message);
+
+        // 2️⃣ Only process AI if NOT from me (avoid AI on own messages)
+        if (!message.key.fromMe) {
+          await chatService.handleIncomingMessage(message);
         }
-        
-        logger.info('📩 Processing message', { 
-          messageId: messageData.key?.id,
-          fromMe: messageData.key?.fromMe,
-          messageType: Object.keys(messageData.message || {})[0]
-        });
-        await this.handleMessage(messageData);
       }
     });
   }

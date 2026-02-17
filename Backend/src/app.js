@@ -8,6 +8,8 @@ import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
 import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages } from './api/sqlserver-api.js';
 import { baileysService } from './services/baileys.js';
+import { chatService } from './services/chatService.js';
+import chatRoutes from './routes/chatRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +26,9 @@ export const createApp = () => {
   }));
 
   app.use(express.json());
+
+  // Chat routes
+  app.use('/api', chatRoutes);
 
   // Serve static frontend files
   app.use(express.static(path.join(__dirname, '../Frontend/dist')));
@@ -301,8 +306,12 @@ export const createApp = () => {
           timestamp: new Date().toISOString()
         });
         
-        // Update message status in database
-        await updateMessageStatus(result.waMessageId, 1); // status = 1 (sent)
+        // Store outgoing message in chat service
+        await chatService.handleOutgoingMessage(
+          jid,
+          message,
+          result.waMessageId
+        );
         
         res.json({
           success: true,
@@ -391,33 +400,7 @@ export const createApp = () => {
     }
   });
 
-  // Initialize WebSocket server for real-time updates
-const server = createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
-
-// Make io globally available
-global.io = io;
-
-io.on('connection', (socket) => {
-  console.log('WebSocket client connected');
-  
-  socket.on('disconnect', () => {
-    console.log('WebSocket client disconnected');
-  });
-});
-
-// Start WebSocket server
-const WS_PORT = process.env.WS_PORT || 3001;
-server.listen(WS_PORT, () => {
-  console.log(`WebSocket server running on port ${WS_PORT}`);
-});
-
-// Serve frontend for all non-API routes
+  // Serve frontend for all non-API routes
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../Frontend/dist/index.html'));
   });
