@@ -12,7 +12,6 @@ export const ClassificationBadge: React.FC<ClassificationBadgeProps> = ({
   const config = {
     lead: { variant: 'info' as const, label: 'Lead' },
     offering: { variant: 'success' as const, label: 'Offering' },
-    ignored: { variant: 'neutral' as const, label: 'Ignored' },
     unknown: { variant: 'warning' as const, label: 'Unknown' },
     noise: { variant: 'neutral' as const, label: 'Noise' },
   };

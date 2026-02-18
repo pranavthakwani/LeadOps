@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getMessages } from '../services/api';
-import type { Message, Classification } from '../types/message';
+import type { Message } from '../types/message';
 
-export const useMessages = (type?: Classification) => {
+export const useMessages = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +12,7 @@ export const useMessages = (type?: Classification) => {
       try {
         setLoading(true);
         setError(null);
-        const data = await getMessages(type);
+        const data = await getMessages();
         setMessages(data);
       } catch (err) {
         setError('Failed to load messages');
@@ -23,7 +23,7 @@ export const useMessages = (type?: Classification) => {
     };
 
     fetchMessages();
-  }, [type]);
+  }, []);
 
   return { messages, loading, error };
 };

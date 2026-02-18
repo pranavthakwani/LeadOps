@@ -5,9 +5,11 @@ import type { Message } from '../../types/message';
 
 interface MessageListProps {
   messages: Message[];
+  currentTab?: string;
+  currentTimeFilter?: string;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, currentTab = 'leads', currentTimeFilter = 'today' }) => {
   if (messages.length === 0) {
     return <EmptyState title="No messages found" description="Try adjusting your filters" />;
   }
@@ -15,7 +17,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
   return (
     <div className="space-y-3">
       {messages.map((message) => (
-        <MessageRow key={message.id} message={message} />
+        <MessageRow key={message.id} message={message} currentTab={currentTab} currentTimeFilter={currentTimeFilter} />
       ))}
     </div>
   );

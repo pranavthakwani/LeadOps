@@ -1,4 +1,4 @@
-export type Classification = 'lead' | 'offering' | 'ignored' | 'unknown' | 'noise';
+export type Classification = 'lead' | 'offering' | 'unknown' | 'noise';
 
 export interface ParsedData {
   brand?: string;
@@ -45,6 +45,8 @@ export interface Message {
   whatsappDeepLink: string;
   note?: string;
   fromMe?: boolean;
+  chatId?: string;
+  chatType?: string;
 }
 
 export interface Contact {

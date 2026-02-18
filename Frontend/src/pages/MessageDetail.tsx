@@ -1,11 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { getMessageByIdNew } from '../services/api';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
-import { IgnoredMessageCard } from '../components/common/IgnoredMessageCard';
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { Loader } from '../components/common/Loader';
 import type { Message } from '../types/message';
@@ -13,32 +12,89 @@ import type { Message } from '../types/message';
 export const MessageDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [message, setMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Default 50%
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Store original navigation state when component mounts
+  const originalTab = location.state?.tab || 'leads';
+  const originalTimeFilter = location.state?.timeFilter || 'today';
+
+  // Global cache for message data to prevent reloading across navigation
+  const globalMessageCache = useRef<Map<string, Message>>(new Map());
+
+  // Listen for cache clear events
+  useEffect(() => {
+    const handleClearCache = () => {
+      globalMessageCache.current.clear();
+    };
+
+    window.addEventListener('clearMessageCache', handleClearCache);
+    
+    return () => {
+      window.removeEventListener('clearMessageCache', handleClearCache);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchMessage = async () => {
       if (!id) return;
 
+      // Check cache first - no loading state if cached
+      const cachedMessage = globalMessageCache.current.get(id);
+      if (cachedMessage) {
+        setMessage(cachedMessage);
+        setLoading(false);
+        setIsInitialLoad(false); // Not initial load anymore
+        return;
+      }
+
+      // Only show loading for non-cached messages or initial load
+      if (isInitialLoad) {
+        setLoading(true);
+      }
+      
       try {
         const data = await getMessageByIdNew(id);
-        setMessage(data);
+        if (data) {
+          setMessage(data);
+          // Cache the message
+          globalMessageCache.current.set(id, data);
+        }
       } catch (error) {
         console.error('Failed to fetch message', error);
       } finally {
         setLoading(false);
+        setIsInitialLoad(false); // Mark initial load as complete
       }
     };
 
     fetchMessage();
   }, [id]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
+  const handleBack = () => {
+    // Navigate back to original tab and time filter
+    const baseUrl = '/inbox';
+    const params = new URLSearchParams();
+    
+    if (originalTab !== 'leads') {
+      params.set('tab', originalTab);
+    }
+    if (originalTimeFilter !== 'today') {
+      params.set('timeFilter', originalTimeFilter);
+    }
+    
+    const queryString = params.toString();
+    const finalUrl = queryString ? `${baseUrl}?${queryString}` : baseUrl;
+    
+    navigate(finalUrl);
+  };
+
+  const handleMouseDown = (_e: React.MouseEvent) => {
     
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return;
@@ -110,7 +166,7 @@ export const MessageDetail: React.FC = () => {
             {/* Top Controls */}
             <div className="flex items-center justify-between mb-3">
               <button
-                onClick={() => navigate(-1)}
+                onClick={handleBack}
                 className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -126,18 +182,11 @@ export const MessageDetail: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              {/* Message Details - Based on Classification */}
-              {message.classification === 'ignored' ? (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Message Details</h3>
-                  <IgnoredMessageCard message={message} />
-                </div>
-              ) : (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
-                  <OfferingCard message={message} />
-                </div>
-              )}
+              {/* Message Details */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
+                <OfferingCard message={message} />
+              </div>
             </div>
           </div>
         </div>

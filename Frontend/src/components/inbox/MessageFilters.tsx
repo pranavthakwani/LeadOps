@@ -4,8 +4,8 @@ import { Search } from 'lucide-react';
 interface MessageFiltersProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  timeFilter: 'today' | '24h' | 'all';
-  onTimeFilterChange: (filter: 'today' | '24h' | 'all') => void;
+  timeFilter: 'today' | '24h' | 'week' | 'month' | 'all';
+  onTimeFilterChange: (filter: 'today' | '24h' | 'week' | 'month' | 'all') => void;
 }
 
 export const MessageFilters: React.FC<MessageFiltersProps> = ({
@@ -28,7 +28,7 @@ export const MessageFilters: React.FC<MessageFiltersProps> = ({
       </div>
 
       <div className="flex gap-2">
-        {(['today', '24h', 'all'] as const).map((filter) => (
+        {(['today', '24h', 'week', 'month', 'all'] as const).map((filter) => (
           <button
             key={filter}
             onClick={() => onTimeFilterChange(filter)}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, MinusCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { getDashboardStats } from '../services/api';
 import { Loader } from '../components/common/Loader';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
@@ -48,10 +48,10 @@ export const Dashboard: React.FC = () => {
     {
       title: 'Ignored',
       value: stats?.ignoredToday || 0,
-      icon: MinusCircle,
+      icon: X,
       color: 'text-gray-600 dark:text-gray-400',
-      bgColor: 'bg-gray-50 dark:bg-gray-900/50',
-      borderColor: 'border-gray-200 dark:border-gray-700',
+      bgColor: 'bg-gray-50 dark:bg-gray-950/50',
+      borderColor: 'border-gray-200 dark:border-gray-800',
       onClick: () => navigate('/inbox?tab=ignored'),
     },
   ];

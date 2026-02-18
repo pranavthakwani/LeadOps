@@ -26,8 +26,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
   const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [replyingTo, setReplyingTo] = useState<DisplayMessage | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
   const socketRef = useRef<Socket | null>(null);
 
   // Load messages from database
@@ -51,30 +53,29 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
           isFromDb: true
         }));
 
-        // Only add the original message if it's not already in the chat
-        const originalMessageId = message.id;
-        const messageExistsInDb = displayMessages.some(msg => 
-          msg.text === (message.rawMessage || '') && 
-          Math.abs(msg.timestamp.getTime() - new Date(message.timestamp).getTime()) < 5000 // Within 5 seconds
-        );
+        // Don't add the original message to chat - just show the existing chat history
+        // The original message is already in the database messages
+        setChatMessages(displayMessages);
 
-        let allMessages = displayMessages;
-        if (!messageExistsInDb) {
-          const originalMessage: DisplayMessage = {
-            id: originalMessageId,
-            text: message.rawMessage || '',
-            timestamp: new Date(message.timestamp),
-            isOutgoing: false,
-            status: 'sent',
-            isFromDb: false
-          };
-          allMessages = [...displayMessages, originalMessage];
-        }
-
-        // Sort by timestamp
-        allMessages = allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-        setChatMessages(allMessages);
+        // Scroll to the clicked message after messages are loaded
+        setTimeout(() => {
+          const targetMessage = displayMessages.find(msg => 
+            msg.text === (message.rawMessage || '') && 
+            Math.abs(msg.timestamp.getTime() - new Date(message.timestamp).getTime()) < 5000
+          );
+          
+          if (targetMessage) {
+            const messageElement = messageRefs.current.get(targetMessage.id);
+            if (messageElement) {
+              messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // Highlight the message briefly
+              messageElement.classList.add('ring-2', 'ring-blue-500', 'ring-opacity-50');
+              setTimeout(() => {
+                messageElement.classList.remove('ring-2', 'ring-blue-500', 'ring-opacity-50');
+              }, 2000);
+            }
+          }
+        }, 100);
       } catch (error) {
         console.error('Error loading messages:', error);
         setSendError('Failed to load messages');
@@ -173,7 +174,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       const response = await sendMessage({
         jid: message.senderNumber,
         message: messageText,
-        replyToMessageId: message.id
+        replyToMessageId: replyingTo?.id?.toString() || message.id.toString()
       });
 
       if (response.success) {
@@ -200,6 +201,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       setReplyText(messageText);
     } finally {
       setIsReplying(false);
+      // Clear the quoted reply after sending
+      setReplyingTo(null);
     }
   };
 
@@ -210,54 +213,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     }
   };
 
-  // WhatsApp-style tick components
-  const SingleTick = ({ color = "#8696a0" }) => (
-    <svg width="16" height="11" viewBox="0 0 16 11">
-      <path
-        d="M1 5.5L5.5 10L15 1"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  const handleReplyToMessage = (chatMessage: DisplayMessage) => {
+    setReplyingTo(chatMessage);
+    setReplyText('');
+    textareaRef.current?.focus();
+  };
 
-  const DoubleTick = ({ color = "#8696a0" }) => (
-    <svg width="18" height="11" viewBox="0 0 18 11">
-      <path
-        d="M1 5.5L5.5 10L15 1"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4 5.5L8.5 10L18 1"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-
-  const getStatusIcon = (status: DisplayMessage['status']) => {
-    switch (status) {
-      case 'pending':
-        return <SingleTick />;
-      case 'sent':
-        return <SingleTick />;
-      case 'delivered':
-        return <DoubleTick />;
-      case 'read':
-        return <DoubleTick color="#53bdeb" />;
-      default:
-        return <SingleTick />;
-    }
+  const cancelReply = () => {
+    setReplyingTo(null);
+    setReplyText('');
   };
 
   const canReply = () => {
@@ -327,9 +291,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
             {chatMessages.map((chatMessage) => (
               <div 
                 key={chatMessage.id} 
-                className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} mb-2`}
+                ref={(el) => {
+                  if (el) messageRefs.current.set(chatMessage.id, el);
+                }}
+                className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} mb-2 group`}
               >
-                <div className="max-w-[70%]">
+                <div className="max-w-[70%] relative">
                   <div className={`${
                     chatMessage.isOutgoing 
                       ? 'bg-[#dcf8c6] dark:bg-[#005c4b]' 
@@ -350,13 +317,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
                           hour12: true 
                         }).toLowerCase()}
                       </span>
-                      {chatMessage.isOutgoing && (
-                        <span className="flex items-center">
-                          {getStatusIcon(chatMessage.status)}
-                        </span>
-                      )}
                     </div>
                   </div>
+                  
+                  {/* Reply Button - Show on hover */}
+                  {!chatMessage.isOutgoing && (
+                    <button
+                      onClick={() => handleReplyToMessage(chatMessage)}
+                      className="absolute -top-2 -right-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 bg-[#128c7e] hover:bg-[#0ea5e9] rounded-full text-white shadow-lg"
+                      title="Reply to message"
+                    >
+                      <Reply className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -380,32 +353,56 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
 
       {/* Input Area - WhatsApp Style */}
       {canReply() && (
-        <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] flex items-center px-3 gap-2">
-          <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-4 py-2">
-            <input
-              type="text"
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Type a message"
-              className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder-gray-500 dark:placeholder-gray-400"
-              disabled={isReplying}
-              maxLength={500}
-            />
+        <div className="h-auto bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] flex flex-col">
+          {/* Quoted Reply Preview */}
+          {replyingTo && (
+            <div className="px-3 py-2 border-b border-[#e9edef] dark:border-[#2a3942]">
+              <div className="bg-white dark:bg-[#2a3942] rounded-lg p-2 border-l-4 border-[#128c7e]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Replying to {chatMessages.find(m => m.id === replyingTo.id)?.isOutgoing ? 'yourself' : 'this message'}
+                  </span>
+                  <button
+                    onClick={cancelReply}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                  {replyingTo.text}
+                </p>
+              </div>
+            </div>
+          )}
+          
+          <div className="h-16 flex items-center px-3 gap-2">
+            <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-4 py-2">
+              <input
+                type="text"
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={replyingTo ? "Reply to message..." : "Type a message"}
+                className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder-gray-500 dark:placeholder-gray-400"
+                disabled={isReplying}
+                maxLength={500}
+              />
+            </div>
+            <button
+              onClick={() => handleSendReply()}
+              disabled={!replyText.trim() || isReplying}
+              className="bg-[#128c7e] hover:bg-[#005c4b] disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors"
+            >
+              {isReplying ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent animate-spin rounded-full"></div>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
+                </svg>
+              )}
+            </button>
           </div>
-          <button
-            onClick={handleSendReply}
-            disabled={!replyText.trim() || isReplying}
-            className="bg-[#128c7e] hover:bg-[#005c4b] disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors"
-          >
-            {isReplying ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent animate-spin rounded-full"></div>
-            ) : (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
-              </svg>
-            )}
-          </button>
         </div>
       )}
 

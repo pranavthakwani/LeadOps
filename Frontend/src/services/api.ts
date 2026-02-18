@@ -1,14 +1,14 @@
 import axios from 'axios';
-import type { Message, Contact, DashboardStats, HealthStatus, Classification, Product } from '../types/message';
+import type { Message, Contact, DashboardStats, HealthStatus, Product } from '../types/message';
 
 const api = axios.create({
   baseURL: '', // Use Vite proxy
   timeout: 10000,
 });
 
-export const getMessages = async (type?: Classification): Promise<Message[]> => {
+export const getMessages = async (): Promise<Message[]> => {
   try {
-    const response = await api.get('/api/messages', { params: { type: type || 'all' } });
+    const response = await api.get('/api/messages');
     return response.data.data || [];
   } catch (error) {
     console.error('Error fetching messages:', error);
