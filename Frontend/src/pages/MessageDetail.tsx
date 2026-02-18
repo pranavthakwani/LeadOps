@@ -23,6 +23,7 @@ export const MessageDetail: React.FC = () => {
   // Store original navigation state when component mounts
   const originalTab = location.state?.tab || 'leads';
   const originalTimeFilter = location.state?.timeFilter || 'today';
+  const fromPage = location.state?.from || 'inbox';
 
   // Global cache for message data to prevent reloading across navigation
   const globalMessageCache = useRef<Map<string, Message>>(new Map());
@@ -77,21 +78,28 @@ export const MessageDetail: React.FC = () => {
   }, [id]);
 
   const handleBack = () => {
-    // Navigate back to original tab and time filter
-    const baseUrl = '/inbox';
-    const params = new URLSearchParams();
+    // Navigate back to the original page
+    const baseUrl = fromPage === 'search' ? '/search' : '/inbox';
     
-    if (originalTab !== 'leads') {
-      params.set('tab', originalTab);
+    // Only add query parameters for inbox navigation
+    if (fromPage === 'inbox') {
+      const params = new URLSearchParams();
+      
+      if (originalTab !== 'leads') {
+        params.set('tab', originalTab);
+      }
+      if (originalTimeFilter !== 'today') {
+        params.set('timeFilter', originalTimeFilter);
+      }
+      
+      const queryString = params.toString();
+      const finalUrl = queryString ? `${baseUrl}?${queryString}` : baseUrl;
+      
+      navigate(finalUrl);
+    } else {
+      // For search page, just navigate back without parameters
+      navigate(baseUrl);
     }
-    if (originalTimeFilter !== 'today') {
-      params.set('timeFilter', originalTimeFilter);
-    }
-    
-    const queryString = params.toString();
-    const finalUrl = queryString ? `${baseUrl}?${queryString}` : baseUrl;
-    
-    navigate(finalUrl);
   };
 
   const handleMouseDown = (_e: React.MouseEvent) => {
@@ -176,7 +184,7 @@ export const MessageDetail: React.FC = () => {
               <div className="flex items-center gap-3">
                 <ClassificationBadge classification={message.classification} />
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(message.timestamp).toLocaleString()}
+                  {new Date(Number(message.timestamp)).toLocaleString()}
                 </span>
               </div>
             </div>

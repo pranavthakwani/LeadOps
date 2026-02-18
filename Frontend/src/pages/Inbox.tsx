@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { MessageList } from '../components/inbox/MessageList';
 import { MessageFilters } from '../components/inbox/MessageFilters';
 import { IgnoredMessageList } from '../components/inbox/IgnoredMessageList';
@@ -12,6 +12,7 @@ type TabType = 'leads' | 'offerings' | 'ignored';
 
 export const Inbox: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<TabType>('leads');
   const [searchQuery, setSearchQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState<'today' | '24h' | 'week' | 'month' | 'all'>('today');
@@ -56,16 +57,16 @@ export const Inbox: React.FC = () => {
     if (timeFilter === 'today') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= today);
+      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= today);
     } else if (timeFilter === '24h') {
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= last24h);
+      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= last24h);
     } else if (timeFilter === 'week') {
       const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= lastWeek);
+      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= lastWeek);
     } else if (timeFilter === 'month') {
       const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= lastMonth);
+      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= lastMonth);
     }
 
     if (debouncedSearch && activeTab !== 'ignored') {

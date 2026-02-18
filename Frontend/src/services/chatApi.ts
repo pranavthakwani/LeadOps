@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5100/api';
+const API_BASE_URL = `${window.location.origin}/api`;
 
 export interface ChatMessage {
   id: number;

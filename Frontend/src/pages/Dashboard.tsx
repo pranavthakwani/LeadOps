@@ -101,7 +101,7 @@ export const Dashboard: React.FC = () => {
             <div className="divide-y divide-gray-200 dark:divide-gray-800">
               {stats.recentActivity.map((message) => (
                 <div
-                  key={message.id}
+                  key={`${message.classification}-${message.id}`}
                   onClick={() => navigate(`/message/${message.id}`)}
                   className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer transition-colors"
                 >

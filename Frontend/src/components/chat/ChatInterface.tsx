@@ -26,7 +26,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
   const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [replyingTo, setReplyingTo] = useState<DisplayMessage | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
@@ -94,7 +93,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       : message.senderNumber + '@s.whatsapp.net';
     
     // Connect to Socket.IO
-    const socket = io('http://localhost:5100');
+    const socket = io(window.location.origin, { transports: ['websocket'] });
     socketRef.current = socket;
 
     // Join the same room that backend uses
@@ -174,7 +173,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       const response = await sendMessage({
         jid: message.senderNumber,
         message: messageText,
-        replyToMessageId: replyingTo?.id?.toString() || message.id.toString()
+        replyToMessageId: message.id
       });
 
       if (response.success) {
@@ -201,8 +200,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       setReplyText(messageText);
     } finally {
       setIsReplying(false);
-      // Clear the quoted reply after sending
-      setReplyingTo(null);
     }
   };
 
@@ -211,17 +208,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       e.preventDefault();
       handleSendReply();
     }
-  };
-
-  const handleReplyToMessage = (chatMessage: DisplayMessage) => {
-    setReplyingTo(chatMessage);
-    setReplyText('');
-    textareaRef.current?.focus();
-  };
-
-  const cancelReply = () => {
-    setReplyingTo(null);
-    setReplyText('');
   };
 
   const canReply = () => {
@@ -294,9 +280,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
                 ref={(el) => {
                   if (el) messageRefs.current.set(chatMessage.id, el);
                 }}
-                className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} mb-2 group`}
+                className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} mb-2`}
               >
-                <div className="max-w-[70%] relative">
+                <div className="max-w-[70%]">
                   <div className={`${
                     chatMessage.isOutgoing 
                       ? 'bg-[#dcf8c6] dark:bg-[#005c4b]' 
@@ -319,17 +305,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
                       </span>
                     </div>
                   </div>
-                  
-                  {/* Reply Button - Show on hover */}
-                  {!chatMessage.isOutgoing && (
-                    <button
-                      onClick={() => handleReplyToMessage(chatMessage)}
-                      className="absolute -top-2 -right-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 bg-[#128c7e] hover:bg-[#0ea5e9] rounded-full text-white shadow-lg"
-                      title="Reply to message"
-                    >
-                      <Reply className="w-3 h-3" />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -353,56 +328,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
 
       {/* Input Area - WhatsApp Style */}
       {canReply() && (
-        <div className="h-auto bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] flex flex-col">
-          {/* Quoted Reply Preview */}
-          {replyingTo && (
-            <div className="px-3 py-2 border-b border-[#e9edef] dark:border-[#2a3942]">
-              <div className="bg-white dark:bg-[#2a3942] rounded-lg p-2 border-l-4 border-[#128c7e]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    Replying to {chatMessages.find(m => m.id === replyingTo.id)?.isOutgoing ? 'yourself' : 'this message'}
-                  </span>
-                  <button
-                    onClick={cancelReply}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-                <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                  {replyingTo.text}
-                </p>
-              </div>
-            </div>
-          )}
-          
-          <div className="h-16 flex items-center px-3 gap-2">
-            <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-4 py-2">
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder={replyingTo ? "Reply to message..." : "Type a message"}
-                className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder-gray-500 dark:placeholder-gray-400"
-                disabled={isReplying}
-                maxLength={500}
-              />
-            </div>
-            <button
-              onClick={() => handleSendReply()}
-              disabled={!replyText.trim() || isReplying}
-              className="bg-[#128c7e] hover:bg-[#005c4b] disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors"
-            >
-              {isReplying ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent animate-spin rounded-full"></div>
-              ) : (
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
-                </svg>
-              )}
-            </button>
+        <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] flex items-center px-3 gap-2">
+          <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-4 py-2">
+            <input
+              type="text"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Type a message"
+              className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder-gray-500 dark:placeholder-gray-400"
+              disabled={isReplying}
+              maxLength={500}
+            />
           </div>
+          <button
+            onClick={handleSendReply}
+            disabled={!replyText.trim() || isReplying}
+            className="bg-[#128c7e] hover:bg-[#005c4b] disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors"
+          >
+            {isReplying ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent animate-spin rounded-full"></div>
+            ) : (
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
+              </svg>
+            )}
+          </button>
         </div>
       )}
 

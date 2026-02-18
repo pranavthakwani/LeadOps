@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Users, Settings, Search, Moon, Sun, GripVertical } from 'lucide-react';
+import { LayoutDashboard, Inbox, Settings, Moon, Sun, GripVertical, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inbox', icon: Inbox, label: 'Inbox' },
-  { to: '/contacts', icon: Users, label: 'Contacts' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
   { to: '/search', icon: Search, label: 'Search' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export const Sidebar: React.FC = () => {

@@ -152,10 +152,10 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
           
           {/* Date */}
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
-            {new Date(message.timestamp).toLocaleDateString('en-IN', { 
+            {new Date(Number(message.timestamp)).toLocaleDateString('en-IN', { 
               day: 'numeric', 
               month: 'short' 
-            })} • {new Date(message.timestamp).toLocaleTimeString('en-US', { 
+            })} • {new Date(Number(message.timestamp)).toLocaleTimeString('en-US', { 
               hour: 'numeric', 
               minute: '2-digit',
               hour12: true 

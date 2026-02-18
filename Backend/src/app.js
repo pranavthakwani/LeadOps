@@ -57,7 +57,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: record.created_at,
+        timestamp: new Date(record.created_at).getTime(),
         confidence: record.confidence || 0,
         parsedData: {
           brand: record.brand,
@@ -105,7 +105,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: record.created_at,
+        timestamp: new Date(record.created_at).getTime(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -169,7 +169,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: record.created_at,
+        timestamp: new Date(record.created_at).getTime(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -205,6 +205,83 @@ export const createApp = () => {
     }
   });
 
+  app.get('/api/search/messages', async (req, res) => {
+    try {
+      const { q, type, timeFilter } = req.query;
+      
+      if (!q) {
+        return res.status(400).json({
+          success: false,
+          error: 'Search query is required'
+        });
+      }
+
+      const searchParams = { q, type };
+      let data = await searchMessages(searchParams);
+
+      // Apply time filtering if specified
+      if (timeFilter && timeFilter !== 'all') {
+        const now = new Date();
+        let filterDate;
+
+        switch (timeFilter) {
+          case 'today':
+            filterDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case '24h':
+            filterDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case 'week':
+            filterDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            filterDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            filterDate = null;
+        }
+
+        if (filterDate) {
+          data = data.filter(record => new Date(record.created_at) >= filterDate);
+        }
+      }
+
+      const formattedResults = data.map(record => ({
+        id: record.id,
+        sender: record.sender || 'Unknown',
+        senderNumber: record.chat_id || '',
+        preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+        rawMessage: record.raw_message || '',
+        classification: record.type === 'lead' ? 'lead' : record.type === 'offering' ? 'offering' : 'unknown',
+        detectedBrands: record.brand ? [record.brand] : [],
+        timestamp: new Date(record.created_at).getTime(),
+        confidence: record.confidence || 0,
+        parsedData: record.type === 'ignored' ? undefined : {
+          brand: record.brand,
+          model: record.model,
+          ram: record.ram ? `${record.ram}GB` : undefined,
+          storage: record.storage ? `${record.storage}GB` : undefined,
+          quantity: record.quantity || record.quantity_max || undefined,
+          price: record.price || record.price_max || undefined,
+          gst: record.gst ? (record.gst ? 'Extra' : 'Included') : undefined,
+          dispatch: record.dispatch || undefined,
+        },
+        whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '').replace('@g.us', '') || ''}`,
+      }));
+
+      res.json({
+        success: true,
+        data: formattedResults
+      });
+    } catch (error) {
+      logger.error('Error searching messages:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to search messages'
+      });
+    }
+  });
+
   app.get('/api/search', async (req, res) => {
     try {
       const { q, type, minPrice, maxPrice, brand, model } = req.query;
@@ -227,7 +304,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: record.created_at,
+        timestamp: new Date(record.created_at).getTime(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,

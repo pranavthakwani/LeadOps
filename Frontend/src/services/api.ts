@@ -91,6 +91,29 @@ export const getHealth = async (): Promise<HealthStatus> => {
   }
 };
 
+export const searchMessages = async (params: {
+  query: string;
+  type?: 'lead' | 'offering';
+  timeFilter?: string;
+}): Promise<Message[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    queryParams.append('q', params.query);
+    if (params.type) {
+      queryParams.append('type', params.type);
+    }
+    if (params.timeFilter && params.timeFilter !== 'all') {
+      queryParams.append('timeFilter', params.timeFilter);
+    }
+
+    const response = await api.get(`/api/search/messages?${queryParams.toString()}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error searching messages:', error);
+    return [];
+  }
+};
+
 export const searchProducts = async (params: {
   query: string;
   type?: 'all' | 'lead' | 'offering';
