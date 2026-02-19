@@ -5,25 +5,58 @@ import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('ChatService');
 
+// Extract actual text content from WhatsApp message
+function extractText(message) {
+  if (!message?.message) return null;
+
+  const msg = message.message;
+
+  return (
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    msg.documentMessage?.caption ||
+    null
+  );
+}
+
 export const chatService = {
 
-  // Store ALL messages (phone, web, incoming, outgoing) - full WhatsApp mirror
+  // Store only actual content messages (filter out system messages, receipts, etc.)
   async storeMessage(message) {
     const jid = message.key.remoteJid;
     const waMessageId = message.key.id;
 
-    // Handle different message types
-    const text = 
-      message.message?.conversation ||
-      message.message?.extendedTextMessage?.text ||
-      message.message?.imageMessage?.caption ||
-      message.message?.videoMessage?.caption ||
-      message.message?.documentMessage?.caption ||
-      '';
+    // Skip broadcast status messages
+    if (jid === 'status@broadcast') {
+      logger.debug('Skipping status broadcast message');
+      return;
+    }
+
+    // Extract actual text content
+    const text = extractText(message);
+    
+    // Skip messages with no actual content
+    if (!text || text.trim() === '') {
+      logger.debug('Skipping message with no text content', { 
+        jid, 
+        waMessageId,
+        fromMe: message.key.fromMe 
+      });
+      return;
+    }
+
+    // Skip empty messages from self (delivery receipts, etc.)
+    if (message.key.fromMe && !text) {
+      logger.debug('Skipping empty self message');
+      return;
+    }
 
     const timestamp = message.messageTimestamp * 1000;
 
-    await chatRepository.insertMessage({
+    // Store message and get conversation_id for socket emission
+    const conversationId = await chatRepository.insertMessage({
       jid,
       waMessageId,
       fromMe: message.key.fromMe ? 1 : 0,
@@ -31,10 +64,11 @@ export const chatService = {
       timestamp
     });
 
-    // Emit to Socket.IO for real-time updates
-    if (global.io) {
-      global.io.to(jid).emit('new-message', {
+    // Emit to Socket.IO for real-time updates using conversation_id
+    if (global.io && conversationId) {
+      global.io.to(`conversation_${conversationId}`).emit('new-message', {
         jid,
+        conversationId,
         waMessageId,
         fromMe: message.key.fromMe,
         message_text: text,
