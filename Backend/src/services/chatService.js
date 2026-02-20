@@ -159,6 +159,18 @@ export const chatService = {
 
     // Don't emit socket event for outgoing messages
     // Frontend already shows optimistic UI
+  },
+
+  async startConversationWithPhone(phone, name = null) {
+    const jid = `${phone}@s.whatsapp.net`;
+
+    const contactId = await chatRepository.getOrCreateContactByPhone(phone, name);
+
+    const conversationId = await chatRepository.getOrCreateConversation(jid);
+
+    await chatRepository.linkContact(conversationId, contactId);
+
+    return conversationId;
   }
 
 };

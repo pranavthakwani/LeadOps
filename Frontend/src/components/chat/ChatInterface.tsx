@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Reply, X } from 'lucide-react';
+import { Send, Reply, X, User } from 'lucide-react';
 import { sendMessage } from '../../services/api';
 import { chatApi } from '../../services/chatApi';
 import type { Message } from '../../types/message';
 import { io, Socket } from 'socket.io-client';
+import { ContactModal } from '../common/ContactModal';
 
 interface ChatInterfaceProps {
-  message: Message;
+  message?: Message;
+  conversationId?: number;
 }
 
 interface DisplayMessage {
@@ -19,13 +21,17 @@ interface DisplayMessage {
   isFromDb?: boolean;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversationId: propConversationId }) => {
   const [replyText, setReplyText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [conversationId, setConversationId] = useState<number | null>(propConversationId || null);
+  const [conversationData, setConversationData] = useState<any>(null);
+  const [showSaveContactModal, setShowSaveContactModal] = useState(false);
+  const [isSavingContact, setIsSavingContact] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
@@ -36,13 +42,77 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     const loadMessages = async () => {
       try {
         setIsLoading(true);
-        const jid = message.senderNumber.includes('@') 
-          ? message.senderNumber 
-          : message.senderNumber + '@s.whatsapp.net';
-        const dbMessages = await chatApi.getMessages(jid);
+        
+        let convId: number;
+        let convData: any;
+        
+        if (propConversationId) {
+          // Direct conversationId provided (from Contacts page)
+          convId = propConversationId;
+          setConversationId(convId);
+          
+          // Get conversation info
+          const conversations = await chatApi.getConversations();
+          const conversation = conversations.find(conv => conv.id === convId);
+          
+          if (conversation) {
+            convData = {
+              conversation_id: conversation.id,
+              jid: conversation.jid,
+              contact_id: conversation.contact_id,
+              display_name: conversation.display_name,
+              phone_number: conversation.phone_number
+            };
+            setConversationData(convData);
+          }
+        } else if (message) {
+          // Legacy message-based approach (from MessageDetail page)
+          const jid = message.chatId || message.senderNumber.includes('@') 
+            ? message.senderNumber 
+            : message.senderNumber + '@s.whatsapp.net';
+          
+          // Get conversations to find the one matching this JID
+          const conversations = await chatApi.getConversations();
+          const conversation = conversations.find(conv => conv.jid === jid);
+          
+          if (!conversation) {
+            setSendError('Conversation not found');
+            return;
+          }
+
+          convId = conversation.id;
+          setConversationId(convId);
+          
+          // Create conversationData object for UI consistency
+          convData = {
+            conversation_id: convId,
+            jid: conversation.jid,
+            contact_id: conversation.contact_id,
+            display_name: conversation.display_name,
+            phone_number: conversation.phone_number
+          };
+          setConversationData(convData);
+
+          // Initialize contact phone from JID if no contact exists
+          if (!convData.contact_id && convData.jid) {
+            const phone = convData.jid.replace('@s.whatsapp.net', '').replace('@g.us', '').replace('@broadcast', '');
+            // Extract phone number without country code for display (if needed for future use)
+            const phoneOnly = phone.replace(/^\+/, '');
+            console.log('Phone extracted from JID:', phoneOnly);
+          }
+        } else {
+          setSendError('No conversation or message provided');
+          return;
+        }
+
+        // Load messages using conversation_id
+        const dbMessages = await chatApi.getMessagesByConversation(convId);
+        
+        // Mark conversation as read
+        await chatApi.markConversationRead(convId);
         
         // Convert database messages to display format
-        const displayMessages: DisplayMessage[] = dbMessages.map(msg => ({
+        const displayMessages: DisplayMessage[] = dbMessages.map((msg: any) => ({
           id: msg.id,
           text: msg.message_text || '',
           timestamp: new Date(Number(msg.message_timestamp)),
@@ -56,25 +126,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
         // The original message is already in the database messages
         setChatMessages(displayMessages);
 
-        // Scroll to the clicked message after messages are loaded
-        setTimeout(() => {
-          const targetMessage = displayMessages.find(msg => 
-            msg.text === (message.rawMessage || '') && 
-            Math.abs(msg.timestamp.getTime() - new Date(message.timestamp).getTime()) < 5000
-          );
-          
-          if (targetMessage) {
-            const messageElement = messageRefs.current.get(targetMessage.id);
-            if (messageElement) {
-              messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              // Highlight the message briefly
-              messageElement.classList.add('ring-2', 'ring-blue-500', 'ring-opacity-50');
-              setTimeout(() => {
-                messageElement.classList.remove('ring-2', 'ring-blue-500', 'ring-opacity-50');
-              }, 2000);
+        // Join conversation room for real-time updates
+        if (socketRef.current) {
+          socketRef.current.emit('join-conversation', convId);
+        }
+
+        // Scroll to the clicked message after messages are loaded (only for message-based approach)
+        if (message) {
+          setTimeout(() => {
+            const targetMessage = displayMessages.find(msg => 
+              msg.text === (message.rawMessage || '') && 
+              Math.abs(msg.timestamp.getTime() - new Date(message.timestamp).getTime()) < 5000
+            );
+            
+            if (targetMessage) {
+              const messageElement = messageRefs.current.get(targetMessage.id);
+              if (messageElement) {
+                messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Highlight the message briefly
+                messageElement.classList.add('ring-2', 'ring-blue-500', 'ring-opacity-50');
+                setTimeout(() => {
+                  messageElement.classList.remove('ring-2', 'ring-blue-500', 'ring-opacity-50');
+                }, 2000);
+              }
             }
-          }
-        }, 100);
+          }, 100);
+        }
       } catch (error) {
         console.error('Error loading messages:', error);
         setSendError('Failed to load messages');
@@ -84,20 +161,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     };
 
     loadMessages();
-  }, [message]);
+  }, [propConversationId, message]);
 
   // Socket.IO connection for real-time updates
   useEffect(() => {
-    const jid = message.senderNumber.includes('@') 
-      ? message.senderNumber 
-      : message.senderNumber + '@s.whatsapp.net';
-    
-    // Connect to Socket.IO
-    const socket = io(window.location.origin, { transports: ['websocket'] });
+    // Connect to Socket.IO backend server, not frontend dev server
+    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5100", { 
+      transports: ['websocket'] 
+    });
     socketRef.current = socket;
 
-    // Join the same room that backend uses
-    socket.emit('join-room', jid);
+    // Join conversation room when conversationId is available
+    if (conversationId) {
+      socket.emit('join-conversation', conversationId);
+    }
 
     // Listen for new messages
     socket.on('new-message', (data: any) => {
@@ -133,7 +210,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     return () => {
       socket.disconnect();
     };
-  }, [message.senderNumber]);
+  }, [conversationId]);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -148,6 +225,42 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
       textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
     }
   }, [replyText]);
+
+  const handleSaveContact = async (name: string, jid: string) => {
+    if (!conversationId) return;
+
+    try {
+      setIsSavingContact(true);
+      
+      const contactId = await chatApi.saveContactToConversation(
+        conversationId,
+        name,
+        jid
+      );
+
+      if (contactId) {
+        // Refetch conversation data to get updated contact info
+        const conversations = await chatApi.getConversations();
+        const updatedConversation = conversations.find(conv => conv.id === conversationId);
+        
+        if (updatedConversation) {
+          const updatedConversationData = {
+            conversation_id: updatedConversation.id,
+            jid: updatedConversation.jid,
+            contact_id: updatedConversation.contact_id,
+            display_name: updatedConversation.display_name,
+            phone_number: updatedConversation.phone_number
+          };
+          setConversationData(updatedConversationData);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      setSendError('Failed to save contact');
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
 
   const handleSendReply = async () => {
     if (!replyText.trim() || isReplying) return;
@@ -171,9 +284,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
     
     try {
       const response = await sendMessage({
-        jid: message.senderNumber,
+        jid: conversationData?.jid || 'unknown',
         message: messageText,
-        replyToMessageId: message.id
+        replyToMessageId: message?.id
       });
 
       if (response.success) {
@@ -212,43 +325,46 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
 
   const canReply = () => {
     // Don't allow reply to own messages
-    if (message.fromMe) return false;
+    if (conversationData?.jid?.includes('@broadcast')) return false;
     
-    // Don't allow reply to broadcast messages
-    if (message.senderNumber?.includes('@broadcast')) return false;
-    
-    // Don't allow reply to group messages
-    if (message.senderNumber?.includes('@g.us')) return false;
-    
-    // Allow LID but show warning
+    // Allow reply for direct messages and groups
     return true;
   };
-
-  const isLid = message.senderNumber?.includes('@lid');
 
   return (
     <div className="flex flex-col h-full">
       {/* Chat Header - WhatsApp Style */}
-      <div className="h-14 px-4 flex items-center bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#e9edef] dark:border-[#2a3942]">
+      <div className="bg-[#075e54] dark:bg-[#0b141a] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center">
-            <span className="text-white font-semibold text-lg">
-              {message.sender?.charAt(0)?.toUpperCase() || 'U'}
-            </span>
+          <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center">
+            {conversationData?.display_name ? (
+              <span className="text-white font-semibold">
+                {conversationData.display_name.charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <User className="w-6 h-6 text-white" />
+            )}
           </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
-              {message.sender}
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {message.senderNumber}
-              {isLid && (
-                <span className="ml-2 px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 rounded-full text-xs font-medium">
-                  Unstable (LID)
-                </span>
-              )}
+          <div>
+            <h2 className="font-semibold text-white">
+              {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
+            </h2>
+            <p className="text-xs text-[#dcf8c6]">
+              {conversationData?.phone_number || conversationData?.jid || 'No number'}
             </p>
           </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Save Contact Button */}
+          {conversationData && !conversationData.contact_id && (
+            <button
+              onClick={() => setShowSaveContactModal(true)}
+              className="px-3 py-1.5 bg-[#128c7e] hover:bg-[#0d6efd] text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              Save Contact
+            </button>
+          )}
         </div>
       </div>
 
@@ -261,17 +377,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
         ) : (
           <>
             {/* Date Separator */}
-            <div className="flex justify-center mb-4">
-              <div className="bg-[#e9edef] dark:bg-[#2a3942] px-3 py-1 rounded-full">
-                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                  {new Date(message.timestamp).toLocaleDateString('en-US', { 
-                    weekday: 'short', 
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
-                </span>
+            {chatMessages.length > 0 && (
+              <div className="flex justify-center mb-4">
+                <div className="bg-[#e9edef] dark:bg-[#2a3942] px-3 py-1 rounded-full">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                    {chatMessages[0].timestamp.toLocaleDateString('en-US', { 
+                      weekday: 'short', 
+                      month: 'short', 
+                      day: 'numeric' 
+                    })}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* All Messages (from DB + new ones) */}
             {chatMessages.map((chatMessage) => (
@@ -367,10 +485,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
                 <Reply className="w-5 h-5 text-[#128c7e]" />
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                    Reply to {message.sender}
+                    Reply to {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {message.senderNumber}
+                    {conversationData?.phone_number || conversationData?.jid || 'No number'}
                   </p>
                 </div>
               </div>
@@ -383,16 +501,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
             </div>
 
             {/* Original Message Preview */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Replying to:
-              </p>
-              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                <p className="text-sm text-gray-800 dark:text-gray-200">
-                  {message.rawMessage}
+            {message && (
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  Replying to:
                 </p>
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                  <p className="text-sm text-gray-800 dark:text-gray-200">
+                    {message.rawMessage}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Reply Input */}
             <div className="flex-1 p-4">
@@ -441,6 +561,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message }) => {
           </div>
         </div>
       )}
+      
+      {/* Save Contact Modal */}
+      <ContactModal
+        isOpen={showSaveContactModal}
+        onClose={() => setShowSaveContactModal(false)}
+        title="Save Contact"
+        submitButtonText="Save Contact"
+        onSubmit={handleSaveContact}
+        isSubmitting={isSavingContact}
+      />
     </div>
   );
 };

@@ -14,8 +14,13 @@ export const createSocketServer = (app) => {
   global.io = io;
 
   io.on('connection', (socket) => {
+    socket.on('join-conversation', (conversationId) => {
+      socket.join(`conversation_${conversationId}`);
+    });
+
+    // Legacy support for old JID-based rooms (can be removed after frontend migration)
     socket.on('join-room', (jid) => {
-      socket.join(jid);
+      console.warn('Legacy JID-based room joining detected. Please migrate to join-conversation with conversationId.');
     });
   });
 
