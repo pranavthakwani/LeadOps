@@ -24,53 +24,38 @@ const executeQuery = async (query, params = []) => {
   }
 };
 
-export const getMessages = async (type = null, limit = 100) => {
-  const startTime = Date.now();
+export const getMessages = async (type = null) => {
   try {
     let query = '';
     
     if (!type || type === 'all') {
-      // Optimized: Use separate queries with LIMIT to avoid expensive UNION ALL
       query = `
-        SELECT TOP ${limit} 'lead' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
+        SELECT 'lead' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
                colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
                confidence, raw_message, created_at
         FROM dealer_leads
-        WHERE created_at >= DATEADD(day, -30, GETUTCDATE())
-        
         UNION ALL
-        
-        SELECT TOP ${limit} 'offering' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
+        SELECT 'offering' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
                colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
                confidence, raw_message, created_at
         FROM distributor_offerings
-        WHERE created_at >= DATEADD(day, -30, GETUTCDATE())
-        
         UNION ALL
-        
-        SELECT TOP ${limit} 'ignored' as type, id, sender, chat_id, chat_type, null as brand, null as model, null as variant, 
+        SELECT 'ignored' as type, id, sender, chat_id, chat_type, null as brand, null as model, null as variant, 
                null as ram, null as storage, null as colors, null as quantity, null as quantity_min, null as quantity_max, 
                null as price, null as price_min, null as price_max, null as condition, null as gst, null as dispatch, 
                confidence, raw_message, created_at
         FROM ignored_messages
-        WHERE created_at >= DATEADD(day, -30, GETUTCDATE())
-        
         ORDER BY created_at DESC
       `;
     } else if (type === 'lead') {
-      query = `SELECT TOP ${limit} * FROM dealer_leads WHERE created_at >= DATEADD(day, -30, GETUTCDATE()) ORDER BY created_at DESC`;
+      query = 'SELECT * FROM dealer_leads ORDER BY created_at DESC';
     } else if (type === 'offering') {
-      query = `SELECT TOP ${limit} * FROM distributor_offerings WHERE created_at >= DATEADD(day, -30, GETUTCDATE()) ORDER BY created_at DESC`;
+      query = 'SELECT * FROM distributor_offerings ORDER BY created_at DESC';
     } else if (type === 'ignored') {
-      query = `SELECT TOP ${limit} * FROM ignored_messages WHERE created_at >= DATEADD(day, -30, GETUTCDATE()) ORDER BY created_at DESC`;
+      query = 'SELECT * FROM ignored_messages ORDER BY created_at DESC';
     }
     
-    const result = await executeQuery(query);
-    const queryTime = Date.now() - startTime;
-    
-    logger.info(`getMessages query executed in ${queryTime}ms, returned ${result.length} records`);
-    
-    return result;
+    return await executeQuery(query);
   } catch (error) {
     logger.error('Error getting messages:', error);
     throw error;
