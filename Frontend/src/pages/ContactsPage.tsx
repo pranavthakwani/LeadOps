@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search } from 'lucide-react';
+import { Users, Search, Edit } from 'lucide-react';
 import { chatApi } from '../services/chatApi';
 import { ChatInterface } from '../components/chat/ChatInterface';
+import { EditContactModal } from '../components/common/EditContactModal';
 
 interface Contact {
   id: number;
@@ -17,6 +18,7 @@ export const ContactsPage: React.FC = () => {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     loadContacts();
@@ -61,6 +63,19 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+  const handleEditContact = (contact: Contact) => {
+    setEditingContact(contact);
+  };
+
+  const handleCloseEditModal = () => {
+    setEditingContact(null);
+  };
+
+  const handleContactUpdate = () => {
+    loadContacts(); // Reload contacts to show updated data
+    setEditingContact(null);
+  };
+
   return (
     <div className="flex h-full bg-gray-50 dark:bg-gray-900">
       {/* Left Panel - Contacts List */}
@@ -103,8 +118,7 @@ export const ContactsPage: React.FC = () => {
             filteredContacts.map((contact) => (
               <div
                 key={contact.id}
-                onClick={() => handleContactClick(contact)}
-                className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 {/* Avatar */}
                 <div className="w-12 h-12 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center mr-3">
@@ -116,16 +130,34 @@ export const ContactsPage: React.FC = () => {
                 {/* Contact Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                    <h3 
+                      className="font-semibold text-gray-900 dark:text-white truncate cursor-pointer"
+                      onClick={() => handleContactClick(contact)}
+                    >
                       {contact.display_name}
                     </h3>
-                    {contact.unread_count > 0 && (
-                      <span className="bg-[#128c7e] text-white text-xs rounded-full px-2 py-1">
-                        {contact.unread_count}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {contact.unread_count > 0 && (
+                        <span className="bg-[#128c7e] text-white text-xs rounded-full px-2 py-1">
+                          {contact.unread_count}
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditContact(contact);
+                        }}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                        title="Edit contact"
+                      >
+                        <Edit className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                  <p 
+                    className="text-sm text-gray-500 dark:text-gray-400 truncate cursor-pointer"
+                    onClick={() => handleContactClick(contact)}
+                  >
                     {contact.phone_number}
                   </p>
                 </div>
@@ -148,6 +180,16 @@ export const ContactsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Edit Contact Modal */}
+      {editingContact && (
+        <EditContactModal
+          isOpen={true}
+          onClose={handleCloseEditModal}
+          contact={editingContact}
+          onUpdate={handleContactUpdate}
+        />
+      )}
     </div>
   );
 };

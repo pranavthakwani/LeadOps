@@ -141,5 +141,19 @@ export const chatApi = {
       console.error('Error fetching conversation by contact:', error);
       return null;
     }
+  },
+
+  // Update contact
+  async updateContact(contactId: number, displayName: string, phoneNumber: string) {
+    try {
+      const response = await axios.put(`${API_BASE_URL}/contacts/${contactId}`, {
+        display_name: displayName,
+        phone_number: phoneNumber
+      });
+      return response.data.success || false;
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      return false;
+    }
   }
 };

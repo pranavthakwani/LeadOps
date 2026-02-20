@@ -227,6 +227,24 @@ export const chatRepository = {
       `);
   },
 
+  async updateContact(contactId, displayName, phoneNumber) {
+    const pool = await getSQLPool();
+
+    await pool.request()
+      .input('contactId', sql.Int, contactId)
+      .input('displayName', sql.NVarChar, displayName)
+      .input('phoneNumber', sql.NVarChar, phoneNumber)
+      .query(`
+        UPDATE contacts
+          SET display_name = @displayName,
+              phone_number = @phoneNumber
+          WHERE id = @contactId
+      `);
+
+    console.log('Updated contact:', contactId);
+    return true;
+  },
+
   // Phone normalization utility
   normalizePhone(phone) {
     if (!phone) return '';

@@ -175,4 +175,25 @@ router.get('/contacts/:id/conversation', async (req, res) => {
   }
 });
 
+// Update contact
+router.put('/contacts/:id', async (req, res) => {
+  try {
+    const contactId = parseInt(req.params.id);
+    const { display_name, phone_number } = req.body;
+
+    if (!display_name || !phone_number) {
+      return res.status(400).json({ error: 'Display name and phone number are required' });
+    }
+
+    // Normalize phone number
+    const normalizedPhone = chatRepository.normalizePhone(phone_number);
+
+    await chatRepository.updateContact(contactId, display_name, normalizedPhone);
+
+    res.json({ success: true, message: 'Contact updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
