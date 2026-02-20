@@ -48,7 +48,7 @@ const buildMessageReplyPayload = (item) => {
     replied_by: item.replied_by || null,
     replied_by_name: item.replied_by_name || null,
     replied_message: item.replied_message || null,
-    replied_at: item.replied_at || new Date(),
+    replied_at: item.replied_at || new Date().toISOString(),
     quoted_message_id: item.quoted_message_id || null,
     quoted_message_text: item.quoted_message_text || null,
     chat_type: item.chat_type || null,

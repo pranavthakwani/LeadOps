@@ -16,7 +16,7 @@ BEGIN
         cost_total_usd DECIMAL(10,6) NULL,
         latency_ms INT NULL,
         raw_message NVARCHAR(MAX) NULL,
-        created_at DATETIME DEFAULT GETDATE()
+        created_at DATETIME DEFAULT GETUTCDATE()
     );
     PRINT '✅ Created table: openai_usage_logs';
 END
@@ -50,7 +50,7 @@ BEGIN
         dispatch NVARCHAR(20) NULL,
         confidence DECIMAL(3,2) NULL,
         raw_message NVARCHAR(MAX) NULL,
-        created_at DATETIME DEFAULT GETDATE()
+        created_at DATETIME DEFAULT GETUTCDATE()
     );
     PRINT '✅ Created table: dealer_leads';
 END
@@ -84,7 +84,7 @@ BEGIN
         dispatch NVARCHAR(20) NULL,
         confidence DECIMAL(3,2) NULL,
         raw_message NVARCHAR(MAX) NULL,
-        created_at DATETIME DEFAULT GETDATE()
+        created_at DATETIME DEFAULT GETUTCDATE()
     );
     PRINT '✅ Created table: distributor_offerings';
 END
@@ -106,7 +106,7 @@ BEGIN
         quoted_message_text NVARCHAR(MAX) NULL,
         chat_type NVARCHAR(50) NULL,
         source NVARCHAR(50) NULL,
-        created_at DATETIME DEFAULT GETDATE()
+        created_at DATETIME DEFAULT GETUTCDATE()
     );
     PRINT '✅ Created table: message_replies';
 END
@@ -125,7 +125,7 @@ BEGIN
         chat_type NVARCHAR(50) NULL,
         confidence DECIMAL(3,2) NULL,
         raw_message NVARCHAR(MAX) NULL,
-        created_at DATETIME DEFAULT GETDATE()
+        created_at DATETIME DEFAULT GETUTCDATE()
     );
     PRINT '✅ Created table: ignored_messages';
 END

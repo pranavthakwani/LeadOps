@@ -125,7 +125,7 @@ async function createTable(pool, tableName) {
           cost_total_usd DECIMAL(10,6) NULL,
           latency_ms INT NULL,
           raw_message NVARCHAR(MAX) NULL,
-          created_at DATETIME DEFAULT GETDATE()
+          created_at DATETIME DEFAULT GETUTCDATE()
         )
       `;
       break;
@@ -154,7 +154,7 @@ async function createTable(pool, tableName) {
           dispatch NVARCHAR(20) NULL,
           confidence DECIMAL(3,2) NULL,
           raw_message NVARCHAR(MAX) NULL,
-          created_at DATETIME DEFAULT GETDATE()
+          created_at DATETIME DEFAULT GETUTCDATE()
         )
       `;
       break;
@@ -183,7 +183,7 @@ async function createTable(pool, tableName) {
           dispatch NVARCHAR(20) NULL,
           confidence DECIMAL(3,2) NULL,
           raw_message NVARCHAR(MAX) NULL,
-          created_at DATETIME DEFAULT GETDATE()
+          created_at DATETIME DEFAULT GETUTCDATE()
         )
       `;
       break;
@@ -200,7 +200,7 @@ async function createTable(pool, tableName) {
           quoted_message_text NVARCHAR(MAX) NULL,
           chat_type NVARCHAR(50) NULL,
           source NVARCHAR(50) NULL,
-          created_at DATETIME DEFAULT GETDATE()
+          created_at DATETIME DEFAULT GETUTCDATE()
         )
       `;
       break;
@@ -214,7 +214,7 @@ async function createTable(pool, tableName) {
           chat_type NVARCHAR(50) NULL,
           confidence DECIMAL(3,2) NULL,
           raw_message NVARCHAR(MAX) NULL,
-          created_at DATETIME DEFAULT GETDATE()
+          created_at DATETIME DEFAULT GETUTCDATE()
         )
       `;
       break;

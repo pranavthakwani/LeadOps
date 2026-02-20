@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { formatISTTime } from '../utils/timeUtils';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { getDashboardStats } from '../services/api';
 import { Loader } from '../components/common/Loader';
@@ -114,10 +115,7 @@ export const Dashboard: React.FC = () => {
                       <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{message.preview}</p>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                      {new Date(message.timestamp).toLocaleTimeString('en-IN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {formatISTTime(message.timestamp)}
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Message } from '../../types/message';
+import { formatISTDateTime } from '../../utils/timeUtils';
 
 interface IgnoredMessageCardProps {
   message: Message;
@@ -27,14 +28,7 @@ export const IgnoredMessageCard: React.FC<IgnoredMessageCardProps> = ({ message 
         </div>
         
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          {new Date(message.timestamp).toLocaleDateString('en-IN', { 
-            day: 'numeric', 
-            month: 'short' 
-          })} • {new Date(message.timestamp).toLocaleTimeString('en-US', { 
-            hour: 'numeric', 
-            minute: '2-digit',
-            hour12: true 
-          }).toLowerCase()}
+          {formatISTDateTime(message.timestamp)}
         </div>
       </div>
 

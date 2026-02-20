@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Message } from '../../types/message';
+import { formatISTDateTime } from '../../utils/timeUtils';
 
 interface OfferingCardProps {
   message: Message;
@@ -152,14 +153,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
           
           {/* Date */}
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
-            {new Date(Number(message.timestamp)).toLocaleDateString('en-IN', { 
-              day: 'numeric', 
-              month: 'short' 
-            })} • {new Date(Number(message.timestamp)).toLocaleTimeString('en-US', { 
-              hour: 'numeric', 
-              minute: '2-digit',
-              hour12: true 
-            }).toLowerCase()}
+            {formatISTDateTime(message.timestamp)}
           </div>
         </div>
       </div>

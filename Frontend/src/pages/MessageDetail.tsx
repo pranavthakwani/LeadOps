@@ -182,7 +182,7 @@ export const MessageDetail: React.FC = () => {
               </button>
               
               <div className="flex items-center gap-3">
-                <ClassificationBadge classification={message.classification} />
+                <ClassificationBadge classification={message.classification}/>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {new Date(Number(message.timestamp)).toLocaleString()}
                 </span>

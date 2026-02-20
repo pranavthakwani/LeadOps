@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Reply, X, User } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
+import { Send, X, User, Reply } from 'lucide-react';
+import { formatISTTime, formatISTDate } from '../../utils/timeUtils';
 import { sendMessage } from '../../services/api';
 import { chatApi } from '../../services/chatApi';
 import type { Message } from '../../types/message';
-import { io, Socket } from 'socket.io-client';
 import { ContactModal } from '../common/ContactModal';
 
 interface ChatInterfaceProps {
@@ -381,11 +382,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
               <div className="flex justify-center mb-4">
                 <div className="bg-[#e9edef] dark:bg-[#2a3942] px-3 py-1 rounded-full">
                   <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                    {chatMessages[0].timestamp.toLocaleDateString('en-US', { 
-                      weekday: 'short', 
-                      month: 'short', 
-                      day: 'numeric' 
-                    })}
+                    {formatISTDate(chatMessages[0].timestamp)}
                   </span>
                 </div>
               </div>
@@ -415,11 +412,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
                     {/* Message Time and Status */}
                     <div className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} items-center gap-1 mt-1`}>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {chatMessage.timestamp.toLocaleTimeString('en-US', { 
-                          hour: 'numeric', 
-                          minute: '2-digit',
-                          hour12: true 
-                        }).toLowerCase()}
+                        {formatISTTime(chatMessage.timestamp)}
                       </span>
                     </div>
                   </div>
