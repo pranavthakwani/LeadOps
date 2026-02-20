@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Send, X, User, Reply } from 'lucide-react';
 import { formatISTTime, formatISTDate } from '../../utils/timeUtils';
+import { SOCKET_BASE_URL } from '../../config/network';
 import { sendMessage } from '../../services/api';
 import { chatApi } from '../../services/chatApi';
 import type { Message } from '../../types/message';
@@ -166,8 +167,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
 
   // Socket.IO connection for real-time updates
   useEffect(() => {
-    // Connect to Socket.IO backend server, not frontend dev server
-    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5100", { 
+    // Connect to Socket.IO backend server using centralized config
+    const socket = io(SOCKET_BASE_URL, { 
       transports: ['websocket'] 
     });
     socketRef.current = socket;

@@ -19,9 +19,17 @@ const logger = createLogger('Express App');
 export const createApp = () => {
   const app = express();
 
-  // CORS configuration
+  // CORS configuration - allow multiple production URLs
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://182.16.16.189:5100',
+    'http://182.16.16.202:5100',
+    process.env.FRONTEND_URL || 'http://localhost:5173'
+  ].filter(Boolean);
+
   app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000'], // Vite default port and common React port
+    origin: allowedOrigins,
     credentials: true
   }));
 

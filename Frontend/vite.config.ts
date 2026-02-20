@@ -1,5 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+
+// Load environment variables
+const env = loadEnv('', process.cwd());
+
+// Dynamic backend URL from environment
+const BACKEND_URL = env.VITE_API_URL || 'http://localhost:5100';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -14,12 +20,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5100',
+        target: BACKEND_URL,
         changeOrigin: true,
         secure: false,
       },
       '/health': {
-        target: 'http://localhost:5100',
+        target: BACKEND_URL,
         changeOrigin: true,
         secure: false,
       },
