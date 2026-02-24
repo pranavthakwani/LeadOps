@@ -44,7 +44,7 @@ export const ContactsPage: React.FC = () => {
   const handleContactClick = async (contact: Contact) => {
     setSelectedContact(contact);
     
-    let conversationId = contact.conversation_id;
+    let conversationId = contact.conversation_id;  
     
     // If no conversation exists, create one
     if (!conversationId) {

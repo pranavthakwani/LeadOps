@@ -79,21 +79,21 @@ export const MessageDetail: React.FC = () => {
 
   const handleBack = () => {
     // Navigate back to the original page
+    if (fromPage === 'dashboard') {
+      // If coming from dashboard, navigate back to dashboard
+      navigate('/dashboard');
+      return;
+    }
+    
     const baseUrl = fromPage === 'search' ? '/search' : '/inbox';
     
     // Only add query parameters for inbox navigation
-    if (fromPage === 'inbox') {
+    if (fromPage !== 'search') {
       const params = new URLSearchParams();
+      params.set('tab', originalTab);
+      params.set('timeFilter', originalTimeFilter);
       
-      if (originalTab !== 'leads') {
-        params.set('tab', originalTab);
-      }
-      if (originalTimeFilter !== 'today') {
-        params.set('timeFilter', originalTimeFilter);
-      }
-      
-      const queryString = params.toString();
-      const finalUrl = queryString ? `${baseUrl}?${queryString}` : baseUrl;
+      const finalUrl = `${baseUrl}?${params.toString()}`;
       
       navigate(finalUrl);
     } else {

@@ -154,5 +154,20 @@ export const chatApi = {
       console.error('Error updating contact:', error);
       return false;
     }
+  },
+
+  // Check WhatsApp connection status
+  async getWhatsAppStatus() {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/whatsapp-status`);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking WhatsApp status:', error);
+      return {
+        connected: false,
+        lastConnected: null,
+        qrRequired: true
+      };
+    }
   }
 };

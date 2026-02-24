@@ -6,7 +6,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
-import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages } from './api/sqlserver-api.js';
+import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages, getTodayOfferingsByBrand, getAvailableBrands, getAvailableModels } from './api/sqlserver-api.js';
 import { baileysService } from './services/baileys.js';
 import { chatService } from './services/chatService.js';
 import chatRoutes from './routes/chatRoutes.js';
@@ -338,6 +338,110 @@ export const createApp = () => {
         error: 'Failed to search products'
       });
     }
+  });
+
+  // API endpoint to get today's lowest price offerings by brand
+  app.get('/api/today-offerings-by-brand', async (req, res) => {
+    try {
+      const { brand, model, quantity, days } = req.query;
+      
+      console.log('Backend received params:', { brand, model, quantity, days });
+      
+      const data = await getTodayOfferingsByBrand(brand, model, quantity, days);
+      
+      console.log('Backend raw results:', data.length, 'items');
+      
+      const formattedResults = data.map(record => ({
+        id: record.id,
+        sender: record.sender || 'Unknown',
+        senderNumber: record.chat_id || '',
+        preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+        rawMessage: record.raw_message || '',
+        classification: 'offering',
+        detectedBrands: record.brand ? [record.brand] : [],
+        timestamp: new Date(record.created_at).getTime(),
+        confidence: record.confidence || 0,
+        rank: record.rank,
+        parsedData: {
+          brand: record.brand,
+          model: record.model,
+          ram: record.ram ? `${record.ram}GB` : undefined,
+          storage: record.storage ? `${record.storage}GB` : undefined,
+          quantity: record.quantity || record.quantity_max || undefined,
+          price: record.price || record.price_max || undefined,
+          gst: record.gst ? (record.gst ? 'Extra' : 'Included') : undefined,
+          dispatch: record.dispatch || undefined,
+        },
+        whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '').replace('@g.us', '') || ''}`,
+      }));
+
+      console.log('Backend formatted results:', formattedResults.length, 'items');
+
+      res.json({
+        success: true,
+        data: formattedResults
+      });
+    } catch (error) {
+      logger.error('Error getting today offerings by brand:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get today offerings by brand'
+      });
+    }
+  });
+
+  // API endpoint to get available brands from today's offerings
+  app.get('/api/available-brands', async (req, res) => {
+    try {
+      const brands = await getAvailableBrands();
+      
+      res.json({
+        success: true,
+        data: brands
+      });
+    } catch (error) {
+      logger.error('Error getting available brands:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get available brands'
+      });
+    }
+  });
+
+  // API endpoint to get available models for a specific brand
+  app.get('/api/available-models', async (req, res) => {
+    try {
+      const { brand } = req.query;
+      
+      if (!brand) {
+        return res.status(400).json({
+          success: false,
+          error: 'Brand parameter is required'
+        });
+      }
+
+      const models = await getAvailableModels(brand);
+      
+      res.json({
+        success: true,
+        data: models
+      });
+    } catch (error) {
+      logger.error('Error getting available models:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get available models'
+      });
+    }
+  });
+
+  // WhatsApp connection status endpoint
+  app.get('/api/whatsapp-status', (req, res) => {
+    res.json({
+      connected: baileysService.isConnected || false,
+      lastConnected: baileysService.lastConnected || null,
+      qrRequired: !baileysService.isConnected && baileysService.qrCode !== null
+    });
   });
 
   // Reply endpoint for WhatsApp messages

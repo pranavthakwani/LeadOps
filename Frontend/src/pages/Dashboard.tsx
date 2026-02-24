@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatISTTime } from '../utils/timeUtils';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { getDashboardStats } from '../services/api';
 import { Loader } from '../components/common/Loader';
-import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
+import { BrandOfferingsCard } from '../components/common/BrandOfferingsCard';
 import type { DashboardStats } from '../types/message';
 
 export const Dashboard: React.FC = () => {
@@ -94,33 +93,9 @@ export const Dashboard: React.FC = () => {
             ))}
           </div>
 
-          <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Last 10 messages</p>
-            </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-800">
-              {stats.recentActivity.map((message) => (
-                <div
-                  key={`${message.classification}-${message.id}`}
-                  onClick={() => navigate(`/message/${message.id}`)}
-                  className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-medium text-gray-900 dark:text-white">{message.sender}</span>
-                        <ClassificationBadge classification={message.classification} />
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{message.preview}</p>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                      {formatISTTime(message.timestamp)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Brand Offerings Card */}
+          <div className="mb-8">
+            <BrandOfferingsCard />
           </div>
         </>
       )}

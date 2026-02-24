@@ -21,7 +21,7 @@ const executeQuery = async (query, params = []) => {
   } catch (error) {
     logger.error('SQL Query Error:', error);
     throw error;
-  }
+  } 
 };
 
 export const getMessages = async (type = null) => {
@@ -165,6 +165,97 @@ export const getDashboardStats = async () => {
     };
   } catch (error) {
     logger.error('Error getting dashboard stats:', error);
+    throw error;
+  }
+};
+
+export const getTodayOfferingsByBrand = async (brand = null, model = null, quantity = null, days = null) => {
+  try {
+    // For now, get all offerings (not just today's) to ensure we have data
+    let query = `
+      SELECT TOP 10 *, 
+             ROW_NUMBER() OVER (ORDER BY price ASC) as rank
+      FROM distributor_offerings 
+      WHERE price IS NOT NULL
+    `;
+    
+    let params = [];
+    
+    if (brand) {
+      query += ` AND brand LIKE @brand`;
+      params.push({ name: 'brand', value: `%${brand}%`, type: sql.NVarChar });
+    }
+    
+    if (model) {
+      query += ` AND model = @model`;
+      params.push({ name: 'model', value: model, type: sql.NVarChar });
+    }
+    
+    if (quantity) {
+      query += ` AND quantity = @quantity`;
+      params.push({ name: 'quantity', value: parseInt(quantity), type: sql.Int });
+    }
+    
+    if (days) {
+      // Calculate date filter based on days parameter
+      const daysNum = parseInt(days);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysNum);
+      cutoffDate.setHours(0, 0, 0, 0);
+      
+      query += ` AND created_at >= @cutoffDate`;
+      params.push({ name: 'cutoffDate', value: cutoffDate.toISOString(), type: sql.DateTime });
+    }
+    
+    query += ` ORDER BY price ASC`;
+    
+    console.log('Final query:', query);
+    console.log('Final params:', params);
+    
+    return await executeQuery(query, params);
+  } catch (error) {
+    logger.error('Error getting today offerings by brand:', error);
+    throw error;
+  }
+};
+
+export const getAvailableBrands = async () => {
+  try {
+    // For now, get all brands (not just today's) to ensure we have data
+    const query = `
+      SELECT DISTINCT brand
+      FROM distributor_offerings 
+      WHERE brand IS NOT NULL AND brand != ''
+      ORDER BY brand
+    `;
+    
+    const result = await executeQuery(query);
+    
+    return result.map(row => row.brand);
+  } catch (error) {
+    logger.error('Error getting available brands:', error);
+    throw error;
+  }
+};
+
+export const getAvailableModels = async (brand) => {
+  try {
+    // Get all models for a specific brand
+    const query = `
+      SELECT DISTINCT model
+      FROM distributor_offerings 
+      WHERE brand LIKE @brand AND model IS NOT NULL AND model != ''
+      ORDER BY model
+    `;
+    
+    const result = await executeQuery(query, [
+      { name: 'brand', value: `%${brand}%`, type: sql.NVarChar }
+    ]);
+    
+    console.log('Available models for brand', brand, ':', result.map(row => row.model));
+    return result.map(row => row.model);
+  } catch (error) {
+    logger.error('Error getting available models:', error);
     throw error;
   }
 };

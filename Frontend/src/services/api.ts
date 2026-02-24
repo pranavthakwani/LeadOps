@@ -149,6 +149,58 @@ export const searchProducts = async (params: {
   }
 };
 
+export const getAvailableModels = async (brand: string): Promise<string[]> => {
+  try {
+    const response = await api.get(`/api/available-models?brand=${encodeURIComponent(brand)}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching available models:', error);
+    return [];
+  }
+};
+
+export const getTodayOfferingsByBrand = async (brand?: string, model?: string, quantity?: string, days?: string): Promise<Message[]> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (brand) {
+      queryParams.append('brand', brand);
+    }
+    if (model) {
+      queryParams.append('model', model);
+    }
+    if (quantity) {
+      queryParams.append('quantity', quantity);
+    }
+    if (days) {
+      queryParams.append('days', days);
+    }
+
+    console.log('Fetching offerings with params:', {
+      brand,
+      model,
+      quantity,
+      days,
+      queryParams: queryParams.toString()
+    });
+
+    const response = await api.get(`/api/today-offerings-by-brand?${queryParams.toString()}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching today offerings by brand:', error);
+    return [];
+  }
+};
+
+export const getAvailableBrands = async (): Promise<string[]> => {
+  try {
+    const response = await api.get('/api/available-brands');
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching available brands:', error);
+    return [];
+  }
+};
+
 export const sendMessage = async (params: {
   jid: string;
   message: string;
