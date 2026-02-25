@@ -169,5 +169,54 @@ export const chatApi = {
         qrRequired: true
       };
     }
+  },
+
+  // Get merged messages by contact ID (from all linked conversations)
+  async getMergedMessagesByContact(contactId: number): Promise<ChatMessage[]> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/contacts/${contactId}/messages`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching merged messages:', error);
+      return [];
+    }
+  },
+
+  // Get all conversation IDs for a contact (for socket rooms)
+  async getConversationsByContact(contactId: number) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/contacts/${contactId}/conversations`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching conversations by contact:', error);
+      return [];
+    }
+  },
+
+  // Update conversation contact association
+  async updateConversationContact(conversationId: number, contactId: number, displayName: string): Promise<boolean> {
+    try {
+      await axios.put(`${API_BASE_URL}/conversations/${conversationId}/contact`, {
+        contactId,
+        displayName
+      });
+      return true;
+    } catch (error) {
+      console.error('Error updating conversation contact:', error);
+      return false;
+    }
+  },
+
+  // Merge two contacts together
+  async mergeContacts(sourceContactId: number, targetContactId: number) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/contacts/${sourceContactId}/merge`, {
+        targetContactId
+      });
+      return response.data.success || false;
+    } catch (error) {
+      console.error('Error merging contacts:', error);
+      return false;
+    }
   }
 };

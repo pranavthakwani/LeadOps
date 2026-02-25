@@ -108,6 +108,20 @@ router.post('/conversations/:id/save-contact', async (req, res) => {
       name
     );
 
+    // Get the conversation to check if it's broadcast/g.us
+    const conversation = await chatRepository.getConversationById(conversationId);
+    
+    // If this is a broadcast or group conversation, link it with WhatsApp JID
+    if (conversation && (conversation.jid.includes('@broadcast') || conversation.jid.endsWith('@g.us'))) {
+      try {
+        const linkResult = await chatRepository.linkBroadcastWithWhatsApp(conversation.jid, normalizedPhone);
+        console.log('Linked broadcast JID with WhatsApp JID:', linkResult);
+      } catch (linkErr) {
+        console.error('Error linking JIDs:', linkErr);
+        // Still proceed with basic contact linking even if JID linking fails
+      }
+    }
+
     await chatRepository.linkContact(conversationId, contactId);
 
     res.json({ success: true, contactId });
@@ -192,6 +206,115 @@ router.put('/contacts/:id', async (req, res) => {
 
     res.json({ success: true, message: 'Contact updated successfully' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get merged messages by contact ID (from all linked conversations)
+router.get('/contacts/:id/messages', async (req, res) => {
+  try {
+    const contactId = parseInt(req.params.id);
+    const messages = await chatRepository.getMergedMessagesByContactId(contactId);
+
+    res.json({
+      success: true,
+      data: messages
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all conversation IDs for a contact (for socket rooms)
+router.get('/contacts/:id/conversations', async (req, res) => {
+  try {
+    const contactId = parseInt(req.params.id);
+    const conversations = await chatRepository.getConversationIdsByContactId(contactId);
+
+    res.json({
+      success: true,
+      data: conversations
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Merge two contacts
+router.post('/contacts/:id/merge', async (req, res) => {
+  try {
+    const sourceContactId = parseInt(req.params.id);
+    const { targetContactId } = req.body;
+
+    if (!targetContactId) {
+      return res.status(400).json({ error: 'Target contact ID is required' });
+    }
+
+    // Verify both contacts exist
+    const sourceContact = await chatRepository.getContactById(sourceContactId);
+    const targetContact = await chatRepository.getContactById(targetContactId);
+    
+    if (!sourceContact || !targetContact) {
+      return res.status(404).json({ error: 'One or both contacts not found' });
+    }
+
+    // Get all conversations from source contact
+    const sourceConversations = await chatRepository.getConversationIdsByContactId(sourceContactId);
+    
+    // Update all conversations to point to target contact
+    for (const conv of sourceConversations) {
+      await chatRepository.linkContact(conv.id, targetContactId);
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Contacts merged successfully',
+      mergedConversations: sourceConversations.length
+    });
+  } catch (err) {
+    console.error('MERGE CONTACTS ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update conversation contact association
+router.put('/conversations/:id/contact', async (req, res) => {
+  try {
+    const conversationId = parseInt(req.params.id);
+    const { contactId, displayName } = req.body;
+
+    if (!contactId || !displayName) {
+      return res.status(400).json({ error: 'Contact ID and display name are required' });
+    }
+
+    // Update the conversation's contact association
+    await chatRepository.linkContact(conversationId, contactId);
+    
+    // Update the contact's display name
+    await chatRepository.updateContact(contactId, displayName);
+
+    res.json({ 
+      success: true, 
+      message: 'Conversation contact updated successfully' 
+    });
+  } catch (err) {
+    console.error('UPDATE CONVERSATION CONTACT ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Clean up duplicate conversations
+router.post('/cleanup-duplicates', async (req, res) => {
+  try {
+    const linkedCount = await chatRepository.cleanupDuplicateConversations();
+    
+    res.json({ 
+      success: true, 
+      message: `Cleaned up ${linkedCount} duplicate conversations`,
+      linkedCount
+    });
+  } catch (err) {
+    console.error('CLEANUP ERROR:', err);
     res.status(500).json({ error: err.message });
   }
 });

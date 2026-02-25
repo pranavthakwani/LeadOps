@@ -8,60 +8,137 @@ import { isMessageAlreadyProcessed, markMessageAsProcessed } from '../utils/mess
 const logger = createLogger('OpenAI Understanding');
 
 const SYSTEM_PROMPT = `
-You extract structured JSON from WhatsApp wholesale electronics messages.
+You extract structured wholesale mobile electronics data from WhatsApp messages.
 
-ABSOLUTE RULES:
-- Output VALID JSON only
-- No explanations, no markdown
-- Never guess or infer
-- Unknown → null
-- Missing colors → {}
-- Penalize ambiguity honestly
+Return valid JSON only. No explanations. No markdown.
 
-INTENT PRIORITY (MANDATORY):
-- If message contains "want to buy", "need", "required", "chahiye", "wtb" → message_type = lead
-- If message contains "available", "stock", "pcs @", "ready", "fresh stock", "wts" → message_type = offering
-- If both buyer and seller terms exist, buyer (lead) takes priority
-- If product list exists without prices → still business_message
-
-STRUCTURE:
-- Use "items[]" when multiple sellable SKUs exist
-- Each item = ONE sellable SKU
-
-RAM / STORAGE:
-- Pattern X/Y → RAM=X, STORAGE=Y
-- "256GB" alone → storage
-- Never treat storage as RAM
-
-PRICE:
-- Range → price=null, price_min, price_max
-- Single → price=value and min=max=value
-- Missing → all null
-
-QUANTITY:
-- Range → quantity=null, quantity_min, quantity_max
-- Single → quantity=value and min=max=value
-- Missing → all null
-
-COLOR SPLIT (IMPORTANT):
-- If colors have quantities, create SEPARATE items per color
-- Each item contains ONLY its color and quantity
-
-TOP-LEVEL FIELDS (ONLY if common to all items):
-- brand, condition, gst, dispatch
-
-ITEM FIELDS:
-- brand, model, variant, ram, storage, colors
-- price, price_min, price_max
-- quantity, quantity_min, quantity_max
+You MUST populate all required top-level fields:
+- is_business_message
+- message_type
+- actor_type
+- brand
+- condition
+- gst
 - dispatch
+- items[]
+- confidence
+- source
 
-CONFIDENCE:
-- Single clear item → 0.80–0.90
-- Multiple items or ranges → 0.60–0.75
-- Heavy ambiguity → 0.50–0.60
+Core Classification Rules:
+
+1. Classify message_type correctly:
+   - Offerings typically include price and quantity.
+   - Leads typically include intent words like "required", "need", "want".
+   - Price alone does NOT determine type.
+   - Always prioritize strong intent indicators over numeric presence.
+
+2. Each sellable SKU must be a separate object inside items[].
+
+3. Evaluate each item independently.
+   - Do NOT assume all SKUs belong to the same brand.
+   - Do NOT group multiple models under one brand unless explicitly stated.
+
+Normalization Rules:
+
+- Normalize casing, spacing, and minor formatting.
+- Treat small variations as same model:
+  "air m1", "AirM1", "macbook m1" → "MacBook Air M1"
+- Normalize abbreviations:
+  "sam", "smg" → "Samsung"
+- Use obvious emoji hints (🍎 → Apple).
+- Preserve alphanumeric suffixes (15T, 11X, 12C).
+- Do not invent missing model parts.
+
+Brand Inference Rules:
+
+- Infer brand ONLY when series ownership is strong and unique.
+- If ambiguous across brands, set brand = null.
+- Do NOT force single-brand assignment across multiple items.
+- Do NOT convert one brand family into another.
+
+Strict Series Ownership (for disambiguation):
+
+Apple:
+- iPhone, Pro, Pro Max, Plus, SE
+- Model codes A####
+
+Samsung:
+- Galaxy S, Z, A, M, F
+- Codes SM-
+
+Xiaomi:
+- Redmi, Redmi Note, Redmi K, Redmi A, Xiaomi
+- Date-based 23xx or older M codes
+
+Realme:
+- GT, Number Series, P Series, C Series
+- Codes RMX####
+
+Oppo:
+- Find X, Find N, Reno, F, A, K
+- Codes CPH####
+
+Vivo:
+- X, V, T, Y
+- Codes V####
+
+Tecno:
+- Phantom, Camon, Pova, Spark, Pop
+
+Infinix:
+- GT, Zero, Note, Hot, Smart
+
+Itel:
+- S, P, A, Vision
+
+Lava:
+- Agni, Blaze, Yuva, Storm, O
+
+Ai+:
+- Pulse, Nova
+
+Nokia:
+- G, C, X, XR
+- Codes TA-####
+
+Motorola:
+- Razr, Edge, Moto G, Moto E
+- Codes XT####
+
+Poco:
+- F, X, M, C
+
+OnePlus:
+- Number Series, R Series, Nord, Nord CE, Open
+
+Narzo:
+- Narzo N, Narzo x0, Narzo A
+- Shares RMX pattern but do NOT override clear Realme indicators
+
+Google:
+- Pixel, Pixel Pro, Pixel a, Pixel Fold
+- Codes G####
+
+If multiple brand families appear in one message, assign brand per item separately.
+
+Correct minor spelling mistakes in brand or model names when the intended series or brand is clearly identifiable (edit-distance ≤ 1). If correction is uncertain or multiple valid matches exist, do NOT guess and keep original.
+
+Parsing Rules:
+
+- Parse RAM/storage (8/128 → ram=8, storage=128).
+- Parse price and quantity (single or range).
+- Split multi-line SKU lists.
+- Unknown values must be null.
+- Never fabricate missing data.
+
+Confidence:
+
+- High confidence when brand and model are explicit.
+- Medium when inference required.
+- Low when ambiguous.
+
+Output JSON ONLY.
 `;
-
 
 export const openaiUnderstanding = async (payload) => {
   try {
@@ -86,10 +163,12 @@ export const openaiUnderstanding = async (payload) => {
     const chatType = payload.body?.chat_type || 'unknown';
     const rawText = (payload.body?.raw_text || '').slice(0, 1500);
 
-    const userPrompt = `
-Extract structured JSON for this message:
+const userPrompt = `
+Extract structured JSON from this WhatsApp message:
 
 """${rawText}"""
+
+Interpret naturally and normalize brand/model to most likely real product names.
 
 Return JSON EXACTLY matching this schema:
 

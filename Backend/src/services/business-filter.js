@@ -152,109 +152,110 @@ function looksLikeStockList(text) {
 // Step 3: Confidence Accumulator (designed to never miss)
 export function isBusinessMessage(text) {
   try {
-    // LANGUAGE FILTER FIRST - Block non-English scripts
-    if (isNonEnglishLanguage(text)) {
-      logger.debug('Filtered out non-English language message', { text: text.substring(0, 50) });
-      return false;
-    }
+    if (!text) return false;
 
-    // HARD NEGATIVE FILTER FIRST - Drop system junk immediately
-    if (isSystemOrNonTrade(text)) {
-      logger.debug('Filtered out system/non-trade message', { text: text.substring(0, 50) });
-      return false;
-    }
+    // Language filter
+    if (isNonEnglishLanguage(text)) return false;
 
-    if (isObviouslyNonBusiness(text)) {
-      logger.debug('Filtered out obviously non-business message', { text: text.substring(0, 50) });
-      return false;
-    }
+    // Hard negative
+    if (isSystemOrNonTrade(text)) return false;
+
+    if (isObviouslyNonBusiness(text)) return false;
 
     const t = text.toLowerCase();
     let score = 0;
     const signals = [];
 
-    // Trade intent = STRONG
-    if (TRADE_INTENT.some(k => t.includes(k))) {
+    // 🔹 Improved trade intent (fuzzy)
+    const TRADE_INTENT_REGEX =
+      /\b(wtb|wts|sale|sell|buy|available|stock|dispatch|ready|offer|deal|quote|rate|rates|price|required|requred|req|need|enquiry)\b/i;
+
+    if (TRADE_INTENT_REGEX.test(t)) {
       score += 4;
       signals.push('trade-intent');
     }
 
-    // Brand presence = STRONG
+    // 🔹 Brand presence (still strong)
     if (BRANDS.some(b => t.includes(b))) {
-      score += 4;
+      score += 3;
       signals.push('brand');
     }
 
-    // Product category = STRONG (fixes iPad/MacBook/Buds messages)
-    if (PRODUCT_CATEGORY.some(p => t.includes(p))) {
-      score += 3;
-      signals.push('product-category');
-    }
-
-    // Model-like tokens (TIGHTENED - only with brand)
-    if (MODEL_PATTERN.test(t) && BRANDS.some(b => t.includes(b))) {
+    // 🔹 Model-like token (NO brand requirement now)
+    if (MODEL_PATTERN.test(t)) {
       score += 2;
-      signals.push('model');
+      signals.push('model-like');
     }
 
-    // Memory
+    // 🔹 Memory
     if (MEMORY_PATTERN.test(t)) {
       score += 2;
       signals.push('memory');
     }
 
-    // Quantity (including ranges)
+    // 🔹 Quantity
     if (QTY_PATTERN.test(t) || QTY_RANGE_PATTERN.test(t)) {
       score += 2;
       signals.push('quantity');
     }
 
-    // Price (including bare prices with context)
-    if (PRICE_PATTERN.test(t)) {
-      score += 2;
+    // 🔹 Price (improved to detect "30k", "45k")
+    const PRICE_WITH_K = /\b\d{2,3}k\b/i;
+    const IMPROVED_PRICE_PATTERN = /(₹|rs\.?|@)\s?\d{3,6}/i;
+
+    if (IMPROVED_PRICE_PATTERN.test(t) || PRICE_WITH_K.test(t)) {
+      score += 3;
       signals.push('price');
-    } else if (
+    }
+
+    // 🔹 Bare price with context (price + quantity OR memory)
+    if (
       BARE_PRICE_PATTERN.test(t) &&
-      (MEMORY_PATTERN.test(t) && BRANDS.some(b => t.includes(b)))
+      (MEMORY_PATTERN.test(t) || QTY_PATTERN.test(t))
     ) {
       score += 2;
-      signals.push('bare-price');
+      signals.push('bare-price-context');
     }
 
-    // Condition / logistics
-    if (CONDITION.some(c => t.includes(c))) {
-      score += 1;
-      signals.push('condition');
+    // 🔹 Combo boost (critical)
+    if (
+      (QTY_PATTERN.test(t) || QTY_RANGE_PATTERN.test(t)) &&
+      (PRICE_WITH_K.test(t) || IMPROVED_PRICE_PATTERN.test(t))
+    ) {
+      score += 3;
+      signals.push('qty+price-boost');
     }
 
-    // Wholesale slang (low score, additive)
-    if (WHOLESALE_SLANG.some(w => t.includes(w))) {
-      score += 1;
-      signals.push('wholesale-slang');
-    }
-
-    // List structure
+    // 🔹 Multiline structure boost
     if (looksLikeStockList(text)) {
       score += 3;
       signals.push('list-structure');
     }
 
-    // Structure boost for multiline wholesale lists
-    if (text.split('\n').length >= 4) {
+    if (text.split('\n').length >= 3) {
       score += 1;
       signals.push('multiline');
     }
 
     /*
-      CRITICAL RULE:
-      Raised threshold to reduce false positives
-      Score >= 4 = Send to pipeline
+      🔥 NEW THRESHOLD LOGIC
+      Lower threshold because we prioritize recall.
+      If price + qty OR trade intent → always pass.
     */
-    const isBusiness = score >= 4;
+
+    const strongSignal =
+      (PRICE_WITH_K.test(t) || IMPROVED_PRICE_PATTERN.test(t)) &&
+      (QTY_PATTERN.test(t) || QTY_RANGE_PATTERN.test(t));
+
+    const isBusiness =
+      strongSignal ||
+      TRADE_INTENT_REGEX.test(t) ||
+      score >= 4;
 
     logger.debug('Business message analysis', {
       score,
       signals,
+      strongSignal,
       isBusiness,
       preview: text.substring(0, 80)
     });
@@ -262,8 +263,9 @@ export function isBusinessMessage(text) {
     return isBusiness;
 
   } catch (error) {
-    logger.error('Error in business message filter', { error: error?.message || String(error) });
-    // Fail safe - if filter crashes, send to pipeline
-    return true;
+    logger.error('Error in business message filter', {
+      error: error?.message || String(error)
+    });
+    return true; // fail-safe
   }
 }

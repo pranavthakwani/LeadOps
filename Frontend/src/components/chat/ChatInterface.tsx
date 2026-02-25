@@ -11,6 +11,8 @@ import { ContactModal } from '../common/ContactModal';
 interface ChatInterfaceProps {
   message?: Message;
   conversationId?: number;
+  contactId?: number;
+  allConversationIds?: number[];
 }
 
 interface DisplayMessage {
@@ -23,7 +25,12 @@ interface DisplayMessage {
   isFromDb?: boolean;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversationId: propConversationId }) => {
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
+  message, 
+  conversationId: propConversationId,
+  contactId,
+  allConversationIds
+}) => {
   const [replyText, setReplyText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
   const [showReplyModal, setShowReplyModal] = useState(false);
@@ -107,11 +114,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
           return;
         }
 
-        // Load messages using conversation_id
-        const dbMessages = await chatApi.getMessagesByConversation(convId);
+        // Load messages using conversation_id or contact_id (for merged messages)
+        let dbMessages: any[] = [];
         
-        // Mark conversation as read
-        await chatApi.markConversationRead(convId);
+        if (contactId) {
+          // Use merged messages from all conversations linked to this contact
+          dbMessages = await chatApi.getMergedMessagesByContact(contactId);
+        } else if (convData.contact_id) {
+          // Use merged messages from all conversations linked to this contact
+          dbMessages = await chatApi.getMergedMessagesByContact(convData.contact_id);
+        } else {
+          // Use single conversation messages
+          dbMessages = await chatApi.getMessagesByConversation(convId);
+        }
         
         // Convert database messages to display format
         const displayMessages: DisplayMessage[] = dbMessages.map((msg: any) => ({
@@ -167,24 +182,50 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
 
   // Socket.IO connection for real-time updates
   useEffect(() => {
+    console.log('Setting up socket connection...');
+    console.log('conversationId:', conversationId);
+    console.log('contactId:', contactId);
+    console.log('allConversationIds:', allConversationIds);
+    
     // Connect to Socket.IO backend server using centralized config
     const socket = io(SOCKET_BASE_URL, { 
       transports: ['websocket'] 
     });
     socketRef.current = socket;
 
-    // Join conversation room when conversationId is available
-    if (conversationId) {
-      socket.emit('join-conversation', conversationId);
-    }
+    socket.on('connect', () => {
+      console.log('Socket connected successfully!');
+      
+      // Join conversation rooms after socket is connected
+      if (conversationId) {
+        console.log('Joining conversation room:', conversationId);
+        socket.emit('join-conversation', conversationId);
+      }
+
+      // For merged contacts, join all conversation rooms
+      if (contactId && allConversationIds && allConversationIds.length > 0) {
+        console.log('Joining merged conversation rooms:', allConversationIds);
+        allConversationIds.forEach(convId => {
+          console.log('Joining room:', convId);
+          socket.emit('join-conversation', convId);
+        });
+      }
+    });
 
     // Listen for new messages
     socket.on('new-message', (data: any) => {
+      console.log('🔥 New message received in chat:', data);
+      console.log('Current chat messages count:', chatMessages.length);
+      
       setChatMessages(prev => {
         // Check if message already exists (dedupe by waMessageId)
         const exists = prev.some(msg => msg.waMessageId === data.waMessageId);
-        if (exists) return prev;
+        if (exists) {
+          console.log('Message already exists, skipping');
+          return prev;
+        }
 
+        console.log('Adding new message to chat');
         const newMessage: DisplayMessage = {
           id: data.waMessageId,
           text: data.message_text,
@@ -195,9 +236,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
           isFromDb: true
         };
 
-        return [...prev, newMessage].sort((a, b) => 
+        const updatedMessages = [...prev, newMessage].sort((a, b) => 
           a.timestamp.getTime() - b.timestamp.getTime()
         );
+        console.log('Updated messages count:', updatedMessages.length);
+        
+        return updatedMessages;
       });
     });
 
@@ -209,10 +253,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
       console.log('Socket.IO connection closed');
     });
 
+    // Cleanup on unmount
     return () => {
+      console.log('Cleaning up socket connection');
       socket.disconnect();
     };
-  }, [conversationId]);
+  }, [conversationId, contactId, allConversationIds]);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -285,8 +331,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
     setIsReplying(true);
     
     try {
+      // Determine the correct JID to send to
+      let targetJid = conversationData?.jid || 'unknown';
+      
+      // If this is a broadcast/group with linked contact, find the WhatsApp JID
+      if (conversationData?.jid?.includes('@broadcast') || conversationData?.jid?.endsWith('@g.us')) {
+        if (conversationData.contact_id) {
+          // Get all conversations for this contact to find the WhatsApp JID
+          const allConversations = await chatApi.getConversationsByContact(conversationData.contact_id);
+          const whatsappConv = allConversations.find((conv: any) => conv.jid.endsWith('@s.whatsapp.net'));
+          if (whatsappConv) {
+            targetJid = whatsappConv.jid;
+          }
+        }
+      }
+      
       const response = await sendMessage({
-        jid: conversationData?.jid || 'unknown',
+        jid: targetJid,
         message: messageText,
         replyToMessageId: message?.id
       });
@@ -326,10 +387,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
   };
 
   const canReply = () => {
-    // Don't allow reply to own messages
-    if (conversationData?.jid?.includes('@broadcast')) return false;
+    // Don't allow reply to broadcast messages unless they have been linked to a contact
+    if (conversationData?.jid?.includes('@broadcast') && !conversationData?.contact_id) return false;
     
-    // Allow reply for direct messages and groups
+    // Allow reply for direct messages, groups, and contacts that have been linked
     return true;
   };
 
@@ -564,6 +625,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ message, conversat
         submitButtonText="Save Contact"
         onSubmit={handleSaveContact}
         isSubmitting={isSavingContact}
+        conversationId={conversationId || undefined}
       />
     </div>
   );

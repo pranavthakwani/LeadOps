@@ -213,6 +213,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
                     <option value="1">1 day</option>
                     <option value="2">2 days</option>
                     <option value="3">3 days</option>
+                    <option value="all">ALL</option>
                   </select>
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                     <ChevronDown className="w-4 h-4 text-gray-400" />

@@ -114,9 +114,9 @@ class BaileysService {
       // Custom browser-like mobile config
       browser: ["LeadOps", "Chrome", "1.0.0"],
       // Connection timeout
-      connectTimeoutMs: 60000,
+      connectTimeoutMs: 120000, // Increased from 60s to 120s
       // Query timeout
-      queryTimeoutMs: 60000,
+      queryTimeoutMs: 120000, // Increased from 60s to 120s
       // Retry configuration
       retryRequestDelayMs: 500,
       maxMsgRetryCount: 2,

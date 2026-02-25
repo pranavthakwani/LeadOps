@@ -13,21 +13,105 @@ interface Contact {
   unread_count: number;
 }
 
+interface MergedContact extends Contact {
+  all_conversation_ids: number[];
+  total_unread_count: number;
+  last_message_preview?: string;
+  last_message_from_me?: boolean;
+}
+
 export const ContactsPage: React.FC = () => {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [contacts, setContacts] = useState<MergedContact[]>([]);
+  const [selectedContact, setSelectedContact] = useState<MergedContact | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     loadContacts();
+    
+    // Set up periodic refresh for unread counts
+    const interval = setInterval(() => {
+      loadContacts();
+    }, 10000); // Refresh every 10 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   const loadContacts = async () => {
     try {
       const contactsData = await chatApi.getContacts();
-      setContacts(contactsData);
+      
+      // Merge conversations by phone number
+      const mergedContactsMap = new Map<string, MergedContact>();
+      
+      contactsData.forEach((contact: Contact) => {
+        const key = contact.phone_number;
+        
+        if (mergedContactsMap.has(key)) {
+          // Update existing merged contact
+          const existing = mergedContactsMap.get(key)!;
+          existing.all_conversation_ids.push(contact.conversation_id!);
+          existing.total_unread_count += contact.unread_count;
+          
+          // Use the most recent conversation
+          if (contact.last_message_at && 
+              (!existing.last_message_at || 
+               new Date(contact.last_message_at) > new Date(existing.last_message_at))) {
+            existing.last_message_at = contact.last_message_at;
+            existing.conversation_id = contact.conversation_id;
+          }
+        } else {
+          // Create new merged contact
+          mergedContactsMap.set(key, {
+            ...contact,
+            all_conversation_ids: contact.conversation_id ? [contact.conversation_id] : [],
+            total_unread_count: contact.unread_count
+          });
+        }
+      });
+      
+      const mergedContacts = Array.from(mergedContactsMap.values());
+      
+      // Fetch last message for each merged contact
+      const contactsWithLastMessage = await Promise.all(
+        mergedContacts.map(async (contact) => {
+          let lastMessagePreview = '';
+          let lastMessageFromMe = false;
+          
+          // Get the most recent conversation
+          if (contact.conversation_id) {
+            try {
+              const messages = await chatApi.getMessagesByConversation(contact.conversation_id);
+              if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                lastMessagePreview = lastMessage.message_text || '';
+                lastMessageFromMe = lastMessage.from_me;
+              }
+            } catch (error) {
+              console.error('Error fetching last message:', error);
+            }
+          }
+          
+          return {
+            ...contact,
+            last_message_preview: lastMessagePreview,
+            last_message_from_me: lastMessageFromMe
+          };
+        })
+      );
+      
+      // Sort by latest message timing (most recent first) - exactly like WhatsApp
+      contactsWithLastMessage.sort((a, b) => {
+        // Handle null/undefined dates
+        const dateA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const dateB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        
+        // Sort in descending order (most recent first)
+        return dateB - dateA;
+      });
+      
+      setContacts(contactsWithLastMessage);
     } catch (error) {
       console.error('Error loading contacts:', error);
     } finally {
@@ -41,16 +125,36 @@ export const ContactsPage: React.FC = () => {
   );
 
 
-  const handleContactClick = async (contact: Contact) => {
+  const handleContactClick = async (contact: MergedContact) => {
     setSelectedContact(contact);
     
+    // Reset unread counts for all conversations of this contact
+    if (contact.all_conversation_ids.length > 0) {
+      try {
+        // Reset unread count on backend for all conversations
+        await Promise.all(
+          contact.all_conversation_ids.map(convId => 
+            chatApi.markConversationRead(convId)
+          )
+        );
+        
+        // Update local state to show unread count as 0
+        setContacts(prev => prev.map(c => 
+          c.id === contact.id ? { ...c, total_unread_count: 0 } : c
+        ));
+      } catch (error) {
+        console.error('Error resetting unread count:', error);
+      }
+    }
+    
+    // Use the most recent conversation ID from the merged contact
     let conversationId = contact.conversation_id;  
     
     // If no conversation exists, create one
     if (!conversationId) {
       conversationId = await chatApi.getConversationByContact(contact.id);
       if (conversationId) {
-        // Update the contact with the new conversation_id
+        // Update contact with new conversation_id
         setContacts(prev => prev.map(c => 
           c.id === contact.id ? { ...c, conversation_id: conversationId } : c
         ));
@@ -137,9 +241,9 @@ export const ContactsPage: React.FC = () => {
                       {contact.display_name}
                     </h3>
                     <div className="flex items-center gap-2">
-                      {contact.unread_count > 0 && (
+                      {contact.total_unread_count > 0 && (
                         <span className="bg-[#128c7e] text-white text-xs rounded-full px-2 py-1">
-                          {contact.unread_count}
+                          {contact.total_unread_count}
                         </span>
                       )}
                       <button
@@ -158,7 +262,16 @@ export const ContactsPage: React.FC = () => {
                     className="text-sm text-gray-500 dark:text-gray-400 truncate cursor-pointer"
                     onClick={() => handleContactClick(contact)}
                   >
-                    {contact.phone_number}
+                    {contact.last_message_preview ? (
+                      <>
+                        {contact.last_message_from_me && (
+                          <span className="font-medium">You: </span>
+                        )}
+                        <span>{contact.last_message_preview}</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400">No messages yet</span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -170,7 +283,11 @@ export const ContactsPage: React.FC = () => {
       {/* Right Panel - Chat Interface */}
       <div className="flex-1 flex flex-col">
         {selectedContact ? (
-          <ChatInterface conversationId={selectedContact.conversation_id || undefined} />
+          <ChatInterface 
+            conversationId={selectedContact.conversation_id || undefined}
+            contactId={selectedContact.id}
+            allConversationIds={selectedContact.all_conversation_ids}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
             <div className="text-center">

@@ -197,14 +197,25 @@ export const getTodayOfferingsByBrand = async (brand = null, model = null, quant
     }
     
     if (days) {
-      // Calculate date filter based on days parameter
-      const daysNum = parseInt(days);
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysNum);
-      cutoffDate.setHours(0, 0, 0, 0);
-      
-      query += ` AND created_at >= @cutoffDate`;
-      params.push({ name: 'cutoffDate', value: cutoffDate.toISOString(), type: sql.DateTime });
+      // Handle "all" case for all-time data
+      if (days === 'all') {
+        // Don't add any date filter for "all" - get all-time data
+        console.log('Getting all-time offerings (no date filter)');
+      } else {
+        // Calculate date filter based on days parameter
+        const daysNum = parseInt(days);
+        if (!isNaN(daysNum)) {
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - daysNum);
+          cutoffDate.setHours(0, 0, 0, 0);
+          
+          query += ` AND created_at >= @cutoffDate`;
+          params.push({ name: 'cutoffDate', value: cutoffDate.toISOString(), type: sql.DateTime });
+          console.log(`Getting offerings from last ${daysNum} days`);
+        } else {
+          console.warn('Invalid days parameter:', days, '- ignoring date filter');
+        }
+      }
     }
     
     query += ` ORDER BY price ASC`;

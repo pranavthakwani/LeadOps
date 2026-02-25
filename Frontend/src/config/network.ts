@@ -16,5 +16,5 @@ export const BASE_URL = getBaseUrl();
 // REST API base
 export const API_BASE_URL = `${BASE_URL}/api`;
 
-// Socket base
+// Socket base - point to backend server
 export const SOCKET_BASE_URL = BASE_URL;

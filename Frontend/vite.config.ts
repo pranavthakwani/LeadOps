@@ -29,6 +29,13 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Socket.IO proxy for real-time connections
+      '/socket.io': {
+        target: BACKEND_URL,
+        changeOrigin: true,
+        secure: false,
+        ws: true, // Enable WebSocket proxying
+      },
     },
   },
 });
