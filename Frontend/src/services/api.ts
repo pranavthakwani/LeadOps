@@ -21,15 +21,79 @@ export const getMessageById = async (id: string): Promise<Message | null> => {
     const response = await api.get(`/api/messages/${id}`);
     return response.data.data || null;
   } catch (error) {
-    console.error('Error fetching message:', error);
+    console.error('Error fetching lead:', error);
     return null;
   }
 };
 
-export const getMessageByIdNew = async (id: string): Promise<Message | null> => {
+export const getLeadById = async (id: string): Promise<Message | null> => {
+  try {
+    const response = await api.get(`/api/leads/${id}`);
+    return response.data.data || null;
+  } catch (error) {
+    console.error('Error fetching lead:', error);
+    return null;
+  }
+};
+
+export const getOfferingById = async (id: string): Promise<Message | null> => {
+  try {
+    const response = await api.get(`/api/offerings/${id}`);
+    return response.data.data || null;
+  } catch (error) {
+    console.error('Error fetching offering:', error);
+    return null;
+  }
+};
+
+export const getIgnoredById = async (id: string): Promise<Message | null> => {
+  try {
+    const response = await api.get(`/api/ignored/${id}`);
+    return response.data.data || null;
+  } catch (error) {
+    console.error('Error fetching ignored message:', error);
+    return null;
+  }
+};
+
+export const getMessageByIdNew = async (id: string, _type?: string): Promise<Message | null> => {
   try {
     const response = await api.get(`/api/messages/${id}`);
-    return response.data.data || null;
+    const record = response.data.data;
+    
+    if (!record) return null;
+    
+    // Transform the record to match Message interface
+    const message: Message = {
+      id: record.id,
+      wa_message_id: record.wa_message_id,
+      sender: record.sender || 'Unknown',
+      senderNumber: record.chat_id || '',
+      preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: record.raw_message || '',
+      classification: record.type || 'unknown',
+      detectedBrands: record.brand ? [record.brand] : [],
+      timestamp: new Date(record.created_at).toISOString(),
+      confidence: record.confidence || 0,
+      parsedData: record.brand ? {
+        brand: record.brand,
+        model: record.model,
+        ram: record.ram,
+        storage: record.storage,
+        quantity: record.quantity,
+        price: record.price,
+        gst: record.gst,
+        dispatch: record.dispatch,
+        color: record.colors
+      } : undefined,
+      whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '') || ''}`,
+      note: record.note,
+      fromMe: false,
+      chatId: record.chat_id,
+      chatType: record.chat_type
+    };
+    
+    return message;
   } catch (error) {
     console.error('Error fetching message:', error);
     return null;

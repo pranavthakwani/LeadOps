@@ -8,6 +8,7 @@ import { processPipeline } from '../pipeline/index.js';
 import { isBusinessMessage } from './business-filter.js';
 import { getEnv } from '../config/env.js';
 import { chatService } from './chatService.js';
+import { chatRepository } from '../repositories/chatRepository.js';
 
 const logger = createLogger('WhatsApp');
 
@@ -180,12 +181,38 @@ class BaileysService {
     // Message events
     this.sock.ev.on('messages.upsert', async ({ messages }) => {
       for (const message of messages) {
-        // 1️⃣ Always store message in chat (mirror WhatsApp fully)
-        await chatService.storeMessage(message);
+        logger.info('Processing message from upsert', { 
+          messageId: message.key.id, 
+          fromMe: message.key.fromMe,
+          messageText: message.message?.conversation || message.message?.extendedTextMessage?.text || 'No text'
+        });
+        
+        // Check if message already exists in DB (prevent duplicates)
+        try {
+          const existing = await chatRepository.getMessageById(message.key.id);
+          if (existing) {
+            logger.debug('Message already exists in DB, skipping', { messageId: message.key.id });
+            continue;
+          } else {
+            logger.debug('Message not found in DB, processing', { messageId: message.key.id });
+          }
+        } catch (error) {
+          logger.error('Error checking message existence', { 
+            messageId: message.key.id, 
+            error: error.message 
+          });
+        }
 
-        // 2️⃣ Only process AI if NOT from me (avoid AI on own messages)
+        // ONLY store incoming messages (NOT from me)
+        // Outgoing messages are stored via handleOutgoingMessage
         if (!message.key.fromMe) {
+          logger.info('Storing incoming message', { messageId: message.key.id });
+          await chatService.storeMessage(message);
           await chatService.handleIncomingMessage(message);
+        } else {
+          logger.info('Skipping outgoing message (handled by handleOutgoingMessage)', { 
+            messageId: message.key.id 
+          });
         }
       }
     });
@@ -450,46 +477,79 @@ class BaileysService {
   }
 
   async sendReply(jid, text, replyToMessageId = null) {
-    if (!this.sock || !this.isConnected) return { success: false, error: 'WhatsApp not connected' };
-    
-    try {
-      let messageOptions = { text };
-      
-      // Add quoted message if replying
-      if (replyToMessageId) {
-        messageOptions.quoted = { 
-          key: { remoteJid: jid, id: replyToMessageId } 
-        };
-      }
-
-      const result = await this.sock.sendMessage(jid, messageOptions);
-      
-      // Store message for read receipt tracking
-      this.sentMessages.set(result.key.id, {
-        jid,
-        text,
-        timestamp: new Date(),
-        status: 'sent'
-      });
-
-      logger.info('Message sent via WhatsApp', {
-        messageId: result.key.id,
-        jid,
-        text: text.substring(0, 50) + '...'
-      });
-
-      return { 
-        success: true, 
-        waMessageId: result.key.id 
-      };
-    } catch (error) {
-      logger.error('Failed to send WhatsApp reply', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
-    }
+  if (!this.sock || !this.isConnected) {
+    return { success: false, error: 'WhatsApp not connected' };
   }
+
+  try {
+    logger.info('Sending WhatsApp reply', { jid, replyToMessageId, text: text.substring(0, 50) });
+    
+    let options = {};
+
+    if (replyToMessageId) {
+      logger.info('Fetching quoted message from DB', { replyToMessageId });
+      
+      try {
+        // Import chatRepository to fetch the full raw message
+        const { chatRepository } = await import('../repositories/chatRepository.js');
+        const quotedMessageFromDB = await chatRepository.getMessageById(replyToMessageId);
+        
+        if (quotedMessageFromDB?.raw_message) {
+          logger.info('Found raw message, parsing for quote');
+          const quotedMsg = JSON.parse(quotedMessageFromDB.raw_message);
+          
+          options.quoted = quotedMsg;
+          logger.info('Quoted message set successfully', { quotedMsgKeys: Object.keys(quotedMsg) });
+        } else {
+          logger.warn('No raw message found for quoting, sending without quote');
+        }
+      } catch (dbError) {
+        logger.error('Error fetching quoted message from DB', { error: dbError.message, replyToMessageId });
+        // Continue without quote rather than failing completely
+      }
+    }
+
+    logger.info('Calling sendMessage', { hasQuoted: !!options.quoted });
+    const result = await this.sock.sendMessage(
+      jid,
+      { text },
+      options
+    );
+
+    this.sentMessages.set(result.key.id, {
+      jid,
+      text,
+      timestamp: new Date(),
+      status: 'sent'
+    });
+
+    logger.info('Message sent via WhatsApp', {
+      messageId: result.key.id,
+      jid,
+      text: text.substring(0, 50) + '...',
+      quoted: replyToMessageId ? 'yes' : 'no'
+    });
+
+    return {
+      success: true,
+      waMessageId: result.key.id
+    };
+
+  } catch (error) {
+    logger.error('Failed to send WhatsApp reply', {
+      error: error.message,
+      stack: error.stack,
+      jid,
+      replyToMessageId,
+      errorName: error.name,
+      errorCode: error.code
+    });
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
 
   // Initialize read receipt tracking
   setupReadReceiptTracking() {

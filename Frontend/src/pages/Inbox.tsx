@@ -57,16 +57,16 @@ export const Inbox: React.FC = () => {
     if (timeFilter === 'today') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= today);
+      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= today);
     } else if (timeFilter === '24h') {
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= last24h);
+      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= last24h);
     } else if (timeFilter === 'week') {
       const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= lastWeek);
+      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= lastWeek);
     } else if (timeFilter === 'month') {
       const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((msg) => new Date(Number(msg.timestamp)) >= lastMonth);
+      filtered = filtered.filter((msg) => new Date(msg.timestamp) >= lastMonth);
     }
 
     if (debouncedSearch && activeTab !== 'ignored') {

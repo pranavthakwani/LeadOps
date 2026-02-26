@@ -6,7 +6,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { processPipeline } from './pipeline/index.js';
 import { createLogger } from './utils/logger.js';
-import { getMessages, getMessageById, getContacts, getDashboardStats, searchMessages, getTodayOfferingsByBrand, getAvailableBrands, getAvailableModels } from './api/sqlserver-api.js';
+import { getMessages, getMessageById, getLeadById, getOfferingById, getIgnoredById, getDashboardStats, getTodayOfferingsByBrand, getAvailableBrands, getAvailableModels, searchMessages, searchProducts } from './api/sqlserver-api.js';
 import { baileysService } from './services/baileys.js';
 import { chatService } from './services/chatService.js';
 import chatRoutes from './routes/chatRoutes.js';
@@ -65,7 +65,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         parsedData: {
           brand: record.brand,
@@ -113,7 +113,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -134,6 +134,152 @@ export const createApp = () => {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch message'
+      });
+    }
+  });
+
+  // Get lead by ID endpoint
+  app.get('/api/leads/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const record = await getLeadById(id);
+      
+      if (!record) {
+        return res.status(404).json({
+          success: false,
+          error: 'Lead not found'
+        });
+      }
+
+      const message = {
+        id: record.id,
+        wa_message_id: record.wa_message_id,
+        sender: record.sender || 'Unknown',
+        senderNumber: record.chat_id || '',
+        preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+        rawMessage: record.raw_message || '',
+        classification: 'lead',
+        detectedBrands: record.brand ? [record.brand] : [],
+        timestamp: new Date(record.created_at).toISOString(),
+        confidence: record.confidence || 0,
+        parsedData: {
+          brand: record.brand,
+          model: record.model,
+          ram: record.ram,
+          storage: record.storage,
+          quantity: record.quantity,
+          price: record.price,
+          gst: record.gst,
+          dispatch: record.dispatch,
+          color: record.colors
+        },
+        whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '') || ''}`,
+        note: record.note,
+        fromMe: false,
+        chatId: record.chat_id,
+        chatType: record.chat_type
+      };
+
+      res.json({ success: true, data: message });
+    } catch (error) {
+      logger.error('Error fetching lead:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch lead'
+      });
+    }
+  });
+
+  // Get offering by ID endpoint
+  app.get('/api/offerings/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const record = await getOfferingById(id);
+      
+      if (!record) {
+        return res.status(404).json({
+          success: false,
+          error: 'Offering not found'
+        });
+      }
+
+      const message = {
+        id: record.id,
+        wa_message_id: record.wa_message_id,
+        sender: record.sender || 'Unknown',
+        senderNumber: record.chat_id || '',
+        preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+        rawMessage: record.raw_message || '',
+        classification: 'offering',
+        detectedBrands: record.brand ? [record.brand] : [],
+        timestamp: new Date(record.created_at).toISOString(),
+        confidence: record.confidence || 0,
+        parsedData: {
+          brand: record.brand,
+          model: record.model,
+          ram: record.ram,
+          storage: record.storage,
+          quantity: record.quantity,
+          price: record.price,
+          gst: record.gst,
+          dispatch: record.dispatch,
+          color: record.colors
+        },
+        whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '') || ''}`,
+        note: record.note,
+        fromMe: false,
+        chatId: record.chat_id,
+        chatType: record.chat_type
+      };
+
+      res.json({ success: true, data: message });
+    } catch (error) {
+      logger.error('Error fetching offering:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch offering'
+      });
+    }
+  });
+
+  // Get ignored message by ID endpoint
+  app.get('/api/ignored/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const record = await getIgnoredById(id);
+      
+      if (!record) {
+        return res.status(404).json({
+          success: false,
+          error: 'Ignored message not found'
+        });
+      }
+
+      const message = {
+        id: record.id,
+        wa_message_id: record.wa_message_id,
+        sender: record.sender || 'Unknown',
+        senderNumber: record.chat_id || '',
+        preview: record.raw_message ? record.raw_message.substring(0, 100) + '...' : '',
+        rawMessage: record.raw_message || '',
+        classification: 'ignored',
+        detectedBrands: [],
+        timestamp: new Date(record.created_at).toISOString(),
+        confidence: record.confidence || 0,
+        parsedData: {},
+        whatsappDeepLink: `https://wa.me/${record.chat_id?.replace('@c.us', '') || ''}`,
+        note: record.note,
+        fromMe: false,
+        chatId: record.chat_id,
+        chatType: record.chat_type
+      };
+
+      res.json({ success: true, data: message });
+    } catch (error) {
+      logger.error('Error fetching ignored message:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch ignored message'
       });
     }
   });
@@ -177,7 +323,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -262,7 +408,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type === 'lead' ? 'lead' : record.type === 'offering' ? 'offering' : 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -312,7 +458,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: record.type || 'unknown',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         parsedData: record.type === 'ignored' ? undefined : {
           brand: record.brand,
@@ -359,7 +505,7 @@ export const createApp = () => {
         rawMessage: record.raw_message || '',
         classification: 'offering',
         detectedBrands: record.brand ? [record.brand] : [],
-        timestamp: new Date(record.created_at).getTime(),
+        timestamp: new Date(record.created_at).toISOString(),
         confidence: record.confidence || 0,
         rank: record.rank,
         parsedData: {
@@ -487,7 +633,9 @@ export const createApp = () => {
       }
 
       // Send reply via Baileys
+      logger.info('About to send reply', { jid, message: message.substring(0, 50), replyToMessageId });
       const result = await baileysService.sendReply(jid, message, replyToMessageId);
+      logger.info('Baileys result received', { success: result.success, error: result.error });
 
       if (result.success) {
         logger.info('Reply sent successfully', { 
@@ -498,11 +646,12 @@ export const createApp = () => {
           timestamp: new Date().toISOString()
         });
         
-        // Store outgoing message in chat service
+        // Store outgoing message in chat service with quoted message support
         await chatService.handleOutgoingMessage(
           jid,
           message,
-          result.waMessageId
+          result.waMessageId,
+          replyToMessageId
         );
         
         res.json({

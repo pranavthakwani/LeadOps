@@ -93,6 +93,92 @@ export const getMessageById = async (id) => {
   }
 };
 
+export const getLeadById = async (id) => {
+  try {
+    const query = `
+      SELECT * FROM dealer_leads WHERE id = @id
+    `;
+    
+    const results = await executeQuery(query, [
+      { name: 'id', value: parseInt(id), type: sql.Int }
+    ]);
+    
+    return results.length > 0 ? results[0] : null;
+  } catch (error) {
+    logger.error('Error getting lead by ID:', error);
+    throw error;
+  }
+};
+
+export const getOfferingById = async (id) => {
+  try {
+    const query = `
+      SELECT * FROM distributor_offerings WHERE id = @id
+    `;
+    
+    const results = await executeQuery(query, [
+      { name: 'id', value: parseInt(id), type: sql.Int }
+    ]);
+    
+    return results.length > 0 ? results[0] : null;
+  } catch (error) {
+    logger.error('Error getting offering by ID:', error);
+    throw error;
+  }
+};
+
+export const getIgnoredById = async (id) => {
+  try {
+    const query = `
+      SELECT * FROM ignored_messages WHERE id = @id
+    `;
+    
+    const results = await executeQuery(query, [
+      { name: 'id', value: parseInt(id), type: sql.Int }
+    ]);
+    
+    return results.length > 0 ? results[0] : null;
+  } catch (error) {
+    logger.error('Error getting ignored message by ID:', error);
+    throw error;
+  }
+};
+
+export const searchProducts = async (searchParams) => {
+  try {
+    const { q, brand, model } = searchParams;
+    let query = `
+      SELECT brand, model, COUNT(*) as count
+      FROM distributor_offerings 
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (q) {
+      query += ` AND (brand LIKE @q OR model LIKE @q)`;
+      params.push({ name: 'q', value: `%${q}%`, type: sql.NVarChar });
+    }
+    
+    if (brand) {
+      query += ` AND brand = @brand`;
+      params.push({ name: 'brand', value: brand, type: sql.NVarChar });
+    }
+    
+    if (model) {
+      query += ` AND model LIKE @model`;
+      params.push({ name: 'model', value: `%${model}%`, type: sql.NVarChar });
+    }
+    
+    query += ` GROUP BY brand, model ORDER BY count DESC`;
+    
+    return await executeQuery(query, params);
+  } catch (error) {
+    logger.error('Error searching products:', error);
+    throw error;
+  }
+};
+
 export const getContacts = async () => {
   try {
     const query = `

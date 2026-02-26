@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { getMessageByIdNew } from '../services/api';
+import { getMessageByIdNew, getLeadById, getOfferingById, getIgnoredById } from '../services/api';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
@@ -24,6 +24,7 @@ export const MessageDetail: React.FC = () => {
   const originalTab = location.state?.tab || 'leads';
   const originalTimeFilter = location.state?.timeFilter || 'today';
   const fromPage = location.state?.from || 'inbox';
+  const messageType = location.state?.messageType;
 
   // Global cache for message data to prevent reloading across navigation
   const globalMessageCache = useRef<Map<string, Message>>(new Map());
@@ -59,12 +60,27 @@ export const MessageDetail: React.FC = () => {
         setLoading(true);
       }
       
+      let data: Message | null = null;
+      
       try {
-        const data = await getMessageByIdNew(id);
+        // Use separate endpoints based on message type if we have it from navigation state
+        if (messageType === 'lead') {
+          data = await getLeadById(id);
+        } else if (messageType === 'offering') {
+          data = await getOfferingById(id);
+        } else if (messageType === 'ignored') {
+          data = await getIgnoredById(id);
+        } else {
+          // Fallback: Search all tables when we don't know the type (direct URL/new tab)
+          data = await getMessageByIdNew(id);
+        }
+        
         if (data) {
           setMessage(data);
           // Cache the message
           globalMessageCache.current.set(id, data);
+        } else {
+          console.error('Failed to fetch message: No data returned');
         }
       } catch (error) {
         console.error('Failed to fetch message', error);
@@ -75,7 +91,7 @@ export const MessageDetail: React.FC = () => {
     };
 
     fetchMessage();
-  }, [id]);
+  }, [id, messageType]);
 
   const handleBack = () => {
     // Navigate back to the original page
@@ -184,7 +200,7 @@ export const MessageDetail: React.FC = () => {
               <div className="flex items-center gap-3">
                 <ClassificationBadge classification={message.classification}/>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(Number(message.timestamp)).toLocaleString()}
+                  {new Date(message.timestamp).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -214,7 +230,7 @@ export const MessageDetail: React.FC = () => {
           className="flex flex-col bg-[#efeae2] dark:bg-black"
           style={{ width: `${100 - leftPanelWidth}%` }}
         >
-          <ChatInterface message={message} />
+          <ChatInterface message={message} targetMessageId={message.wa_message_id} />
         </div>
       </div>
     </div>

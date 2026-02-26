@@ -83,14 +83,18 @@ export const chatRepository = {
     // 1️⃣ Get or create conversation
     const conversationId = await this.getOrCreateConversation(data.jid);
 
-    // 2️⃣ Insert message WITH conversation_id
-    await pool.request()
+    // 2️⃣ Insert the message with full raw message
+    const request = pool.request()
       .input('jid', sql.NVarChar, data.jid)
       .input('conversationId', sql.Int, conversationId)
       .input('waMessageId', sql.NVarChar, data.waMessageId)
       .input('fromMe', sql.Bit, data.fromMe)
       .input('text', sql.NVarChar(sql.MAX), data.text)
       .input('timestamp', sql.BigInt, data.timestamp)
+      .input('quotedMessageId', sql.NVarChar, data.quotedMessageId || null)
+      .input('quotedText', sql.NVarChar(sql.MAX), data.quotedText || null)
+      .input('quotedSender', sql.NVarChar, data.quotedSender || null)
+      .input('rawMessage', sql.NVarChar(sql.MAX), data.rawMessage || null)
       .query(`
         INSERT INTO chat_messages (
           jid,
@@ -99,7 +103,11 @@ export const chatRepository = {
           from_me,
           message_text,
           message_timestamp,
-          created_at
+          created_at,
+          quoted_message_id,
+          quoted_text,
+          quoted_sender,
+          raw_message
         )
         VALUES (
           @jid,
@@ -108,7 +116,11 @@ export const chatRepository = {
           @fromMe,
           @text,
           @timestamp,
-          GETUTCDATE()
+          GETUTCDATE(),
+          @quotedMessageId,
+          @quotedText,
+          @quotedSender,
+          @rawMessage
         )
       `);
 
@@ -134,6 +146,41 @@ export const chatRepository = {
     return conversationId; // Return conversation_id for socket emission
   },
 
+  async getMessageById(messageId) {
+    const pool = await getSQLPool();
+
+    const result = await pool.request()
+      .input('messageId', sql.NVarChar, messageId)
+      .query(`
+        SELECT 
+          id,
+          wa_message_id,
+          message_text,
+          from_me,
+          message_timestamp,
+          jid,
+          raw_message
+        FROM chat_messages
+        WHERE wa_message_id = @messageId
+      `);
+
+    return result.recordset[0] || null;
+  },
+
+  async getConversationByJid(jid) {
+    const pool = await getSQLPool();
+
+    const result = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT id, jid, type, contact_id
+        FROM conversations
+        WHERE jid = @jid
+      `);
+
+    return result.recordset[0] || null;
+  },
+
   async getMessagesByJid(jid) {
     const pool = await getSQLPool();
 
@@ -155,10 +202,24 @@ export const chatRepository = {
     const result = await pool.request()
       .input('conversationId', sql.Int, conversationId)
       .query(`
-        SELECT *
-        FROM chat_messages
-        WHERE conversation_id = @conversationId
-        ORDER BY message_timestamp ASC, id ASC
+        SELECT 
+          m.id,
+          m.jid,
+          m.conversation_id,
+          m.wa_message_id,
+          m.from_me,
+          m.message_text,
+          m.message_timestamp,
+          m.created_at,
+          m.quoted_message_id,
+          COALESCE(m.quoted_text, q.message_text) AS quoted_text,
+          m.quoted_sender,
+          m.raw_message
+        FROM chat_messages m
+        LEFT JOIN chat_messages q
+          ON m.quoted_message_id = q.wa_message_id
+        WHERE m.conversation_id = @conversationId
+        ORDER BY m.message_timestamp ASC, m.id ASC
       `);
 
     return result.recordset;
@@ -509,9 +570,14 @@ export const chatRepository = {
           cm.message_text,
           cm.message_timestamp,
           cm.created_at,
+          cm.quoted_message_id,
+          COALESCE(cm.quoted_text, q.message_text) AS quoted_text,
+          cm.quoted_sender,
           c.type as conversation_type,
           c.jid as conversation_jid
         FROM chat_messages cm
+        LEFT JOIN chat_messages q
+          ON cm.quoted_message_id = q.wa_message_id
         JOIN conversations c ON cm.conversation_id = c.id
         WHERE c.contact_id = @contactId
         ORDER BY cm.message_timestamp ASC, cm.id ASC

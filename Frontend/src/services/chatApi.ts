@@ -12,6 +12,9 @@ export interface ChatMessage {
   message_timestamp: number;
   status: number;
   created_at: string;
+  quoted_message_id?: string;
+  quoted_text?: string;
+  quoted_sender?: string;
 }
 
 export interface Conversation {
@@ -103,6 +106,31 @@ export const chatApi = {
     } catch (error) {
       console.error('Error saving contact:', error);
       return null;
+    }
+  },
+
+  // Send message with optional quote
+  async sendMessage(conversationId: number, text: string, quotedMessageId?: string): Promise<boolean> {
+    try {
+      // First get the conversation details to get the JID
+      const conversations = await this.getConversations();
+      const conversation = conversations.find(conv => conv.id === conversationId);
+      
+      if (!conversation) {
+        console.error('Conversation not found:', conversationId);
+        return false;
+      }
+
+      // Use the /api/reply endpoint with JID
+      await axios.post(`${API_BASE_URL}/reply`, {
+        jid: conversation.jid,
+        message: text,
+        replyToMessageId: quotedMessageId
+      });
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return false;
     }
   },
 

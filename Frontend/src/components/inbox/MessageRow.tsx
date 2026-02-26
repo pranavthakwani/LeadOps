@@ -12,17 +12,20 @@ interface MessageRowProps {
 export const MessageRow: React.FC<MessageRowProps> = ({ message, currentTab = 'leads', currentTimeFilter = 'today' }) => {
   const navigate = useNavigate();
 
-  const handleClick = () => {
-    // Navigate with state to preserve current tab and time filter
-    navigate(`/message/${message.id}`, { 
+  const handleRowClick = (message: Message) => {
+    // Always use the message route and pass type in state
+    const apiUrl = `/message/${message.id}`;
+    
+    navigate(apiUrl, { 
       state: { 
         tab: currentTab,
         timeFilter: currentTimeFilter,
+        messageType: message.classification,
         from: '/inbox' 
       } 
     });
   };
 
   // Use OfferingCard for leads and offerings (clickable)
-  return <OfferingCard message={message} onClick={handleClick} />;
+  return <OfferingCard message={message} onClick={() => handleRowClick(message)} />;
 };

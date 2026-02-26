@@ -33,6 +33,7 @@ export interface Product {
 
 export interface Message {
   id: string;
+  wa_message_id?: string;
   sender: string;
   senderNumber: string;
   preview: string;

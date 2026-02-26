@@ -6,6 +6,7 @@ const logger = createLogger('Insert to SQL Server DB');
 
 const buildDealerLeadPayload = (item) => {
   return {
+    wa_message_id: item.wa_message_id || null,
     sender: item.source?.sender || null,
     chat_id: item.source?.chat_id || null,
     chat_type: item.source?.chat_type || null,
@@ -35,6 +36,7 @@ const buildDistributorOfferingPayload = (item) => {
 
 const buildIgnoredMessagePayload = (item) => {
   return {
+    wa_message_id: item.wa_message_id || null,
     sender: item.source?.sender || null,
     chat_id: item.source?.chat_id || null,
     chat_type: item.source?.chat_type || null,

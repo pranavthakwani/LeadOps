@@ -186,7 +186,9 @@ export const parseAndValidateJSON = (payload) => {
           quantity_max: quantityData.quantity_max,
           condition: sku?.condition ?? parsed.condition ?? null,
           gst: typeof sku?.gst === 'boolean' ? sku.gst : typeof parsed.gst === 'boolean' ? parsed.gst : null,
-          dispatch: sku?.dispatch ?? parsed.dispatch ?? null
+          dispatch: sku?.dispatch ?? parsed.dispatch ?? null,
+          // Preserve wa_message_id from payload
+          wa_message_id: payload.wa_message_id || null
         });
       }
     } else {
@@ -210,7 +212,9 @@ export const parseAndValidateJSON = (payload) => {
         quantity_max: quantityData.quantity_max,
         condition: parsed.condition ?? null,
         gst: typeof parsed.gst === 'boolean' ? parsed.gst : null,
-        dispatch: parsed.dispatch ?? null
+        dispatch: parsed.dispatch ?? null,
+        // Preserve wa_message_id from payload
+        wa_message_id: payload.wa_message_id || null
       });
     }
 
@@ -240,6 +244,8 @@ export const parseAndValidateJSON = (payload) => {
         gst: null,
         dispatch: null,
         confidence: 0,
+        // Preserve wa_message_id from payload even in error case
+        wa_message_id: payload.wa_message_id || null,
         source: {
           sender: payload.body?.sender || 'unknown',
           chat_id: payload.body?.chat_id || 'unknown',
