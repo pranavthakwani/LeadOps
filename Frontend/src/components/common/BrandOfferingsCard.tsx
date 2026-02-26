@@ -44,7 +44,6 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
   const navigate = useNavigate();
   const [selectedBrand, setSelectedBrand] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [selectedQuantity, setSelectedQuantity] = useState<string>('');
   const [selectedDays, setSelectedDays] = useState<string>('1');
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -70,14 +69,6 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
     [availableModels]
   );
 
-  const quantityOptions = useMemo(() => [
-    { value: '', label: 'All quantities' },
-    { value: '1', label: '1' },
-    { value: '2', label: '2' },
-    { value: '3', label: '3' },
-    { value: '5', label: '5' },
-    { value: '10', label: '10' },
-  ], []);
 
   const daysOptions = useMemo(() => [
     { value: '1', label: '1 day' },
@@ -133,7 +124,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
       const fetchOfferings = async () => {
         try {
           setLoading(true);
-          const data = await getTodayOfferingsByBrand(selectedBrand, selectedModel, selectedQuantity, selectedDays);
+          const data = await getTodayOfferingsByBrand(selectedBrand, selectedModel, '', selectedDays);
           setOfferings(data);
         } catch (error) {
           console.error('Failed to fetch offerings:', error);
@@ -145,7 +136,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
 
       fetchOfferings();
     }
-  }, [selectedBrand, selectedModel, selectedQuantity, selectedDays]);
+  }, [selectedBrand, selectedModel, selectedDays]);
 
   const handleBrandChange = (brand: string) => {
     setSelectedBrand(brand);
@@ -174,7 +165,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
               Lowest Price Offerings
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Filter by brand, model, quantity, and days
+              Filter by brand, model, and days
             </p>
           </div>
           
@@ -197,14 +188,6 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
               placeholder={availableModels.length === 0 ? 'No models' : 'Select model'}
               disabled={!selectedBrand || availableModels.length === 0}
               loading={modelsLoading}
-            />
-
-            {/* Quantity Selector */}
-            <CustomSelect
-              value={selectedQuantity}
-              onChange={setSelectedQuantity}
-              options={quantityOptions}
-              width="w-36"
             />
 
             {/* Days Selector */}
@@ -283,7 +266,8 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
                     onClick={() => navigate(`/message/${offering.id}`, { 
                       state: { 
                         from: 'dashboard',
-                        tab: 'offering' 
+                        tab: 'offering',
+                        messageType: 'offering'
                       } 
                     })}
                   />

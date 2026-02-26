@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { User, X, Reply, Send, ChevronDown } from 'lucide-react';
 import { chatApi } from '../../services/chatApi';
@@ -117,7 +117,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       try {
         setIsLoading(true);
         
-        let convId: number;
+        let convId: number | null;
         let convData: any;
         
         if (propConversationId) {
@@ -150,22 +150,34 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const conversation = conversations.find(conv => conv.jid === jid);
           
           if (!conversation) {
-            setSendError('Conversation not found');
-            return;
+            // Create temporary conversation data for non-saved contacts
+            console.log('Conversation not found, creating temporary conversation for JID:', jid);
+            
+            convData = {
+              conversation_id: null, // No conversation ID for temporary conversations
+              jid: jid,
+              contact_id: null,
+              display_name: message.sender || 'Unknown Contact',
+              phone_number: message.senderNumber || jid.replace('@s.whatsapp.net', '')
+            };
+            setConversationData(convData);
+            
+            // Set convId to null for temporary conversations
+            convId = null;
+          } else {
+            convId = conversation.id;
+            setConversationId(convId);
+            
+            // Create conversationData object for UI consistency
+            convData = {
+              conversation_id: convId,
+              jid: conversation.jid,
+              contact_id: conversation.contact_id,
+              display_name: conversation.display_name,
+              phone_number: conversation.phone_number
+            };
+            setConversationData(convData);
           }
-
-          convId = conversation.id;
-          setConversationId(convId);
-          
-          // Create conversationData object for UI consistency
-          convData = {
-            conversation_id: convId,
-            jid: conversation.jid,
-            contact_id: conversation.contact_id,
-            display_name: conversation.display_name,
-            phone_number: conversation.phone_number
-          };
-          setConversationData(convData);
 
           // Initialize contact phone from JID if no contact exists
           if (!convData.contact_id && convData.jid) {
@@ -188,9 +200,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         } else if (convData.contact_id) {
           // Use merged messages from all conversations linked to this contact
           dbMessages = await chatApi.getMergedMessagesByContact(convData.contact_id);
-        } else {
+        } else if (convId) {
           // Use single conversation messages
           dbMessages = await chatApi.getMessagesByConversation(convId);
+        } else if (convData.jid) {
+          // For temporary conversations (non-saved contacts), load messages by JID
+          dbMessages = await chatApi.getMessagesByJid(convData.jid);
+        } else {
+          // No way to load messages
+          dbMessages = [];
         }
         
         // Convert database messages to display format
@@ -213,7 +231,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         // Join conversation room for real-time updates
         if (socketRef.current) {
-          socketRef.current.emit('join-conversation', convId);
+          if (convId) {
+            socketRef.current.emit('join-conversation', convId);
+          } else if (convData.jid) {
+            // For temporary conversations, join by JID
+            socketRef.current.emit('join-conversation', convData.jid);
+          }
         }
 
         // Scroll to the target message after messages are loaded (using WhatsApp message ID)
@@ -457,14 +480,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setQuotedMessage(null);
     
     try {
-      const response = await chatApi.sendMessage(
-        conversationId!,
-        messageText,
-        quotedMessage?.id
-      );
+      let response;
+      
+      if (conversationId) {
+        // Use conversation-based API for saved contacts
+        response = await chatApi.sendMessage(
+          conversationId,
+          messageText,
+          quotedMessage?.id
+        );
+      } else if (conversationData?.jid) {
+        // Use JID-based API for temporary conversations (non-saved contacts)
+        response = await chatApi.sendMessageByJid(
+          conversationData.jid,
+          messageText,
+          quotedMessage?.id
+        );
+      } else {
+        throw new Error('No conversation ID or JID available for sending message');
+      }
       
       console.log('Sent message with quote:', { 
-        conversationId: conversationId!,
+        conversationId: conversationId || 'temp',
         targetJid: conversationData?.jid, 
         messageText, 
         replyToMessageId: quotedMessage?.id,
@@ -629,6 +666,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Error Display */}
+        {sendError && (
+          <div className="mx-4 mb-2">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">!</span>
+                  </div>
+                  <span className="text-red-700 dark:text-red-300 text-sm">{sendError}</span>
+                </div>
+                <button
+                  onClick={() => setSendError(null)}
+                  className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Messages Area - WhatsApp Style */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1" ref={messagesContainerRef}>

@@ -40,6 +40,17 @@ export const chatApi = {
     }
   },
 
+  // Get messages by JID (for temporary conversations)
+  async getMessagesByJid(jid: string): Promise<ChatMessage[]> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/messages/jid/${encodeURIComponent(jid)}`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching messages by JID:', error);
+      return [];
+    }
+  },
+
   // Get conversations list with contact info
   async getConversations(): Promise<Conversation[]> {
     try {
@@ -130,6 +141,22 @@ export const chatApi = {
       return true;
     } catch (error) {
       console.error('Error sending message:', error);
+      return false;
+    }
+  },
+
+  // Send message by JID (for temporary conversations/non-saved contacts)
+  async sendMessageByJid(jid: string, text: string, quotedMessageId?: string): Promise<boolean> {
+    try {
+      // Use the /api/reply endpoint with JID directly
+      await axios.post(`${API_BASE_URL}/reply`, {
+        jid: jid,
+        message: text,
+        replyToMessageId: quotedMessageId
+      });
+      return true;
+    } catch (error) {
+      console.error('Error sending message by JID:', error);
       return false;
     }
   },

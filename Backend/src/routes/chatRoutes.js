@@ -19,6 +19,21 @@ router.get('/conversations/:id/messages', async (req, res) => {
   }
 });
 
+// Get messages by JID (for temporary conversations/non-saved contacts)
+router.get('/messages/jid/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+    const messages = await chatRepository.getMessagesByJid(jid);
+
+    res.json({
+      success: true,
+      data: messages
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Reset unread count when conversation is opened
 router.post('/conversations/:id/mark-read', async (req, res) => {
   try {
