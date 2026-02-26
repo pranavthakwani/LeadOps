@@ -1,13 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, TrendingDown, Loader } from 'lucide-react';
+import { TrendingDown, TrendingDown as EmptyIcon } from 'lucide-react';
 import { getTodayOfferingsByBrand, getAvailableBrands, getAvailableModels } from '../../services/api';
 import { OfferingCard } from './DetailCard';
+import { CustomSelect } from './CustomSelect';
 import type { Message } from '../../types/message';
 
 interface BrandOfferingsCardProps {
   className?: string;
 }
+
+// Skeleton Components
+const SkeletonCard = () => (
+  <div className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+    <div className="flex items-center gap-5">
+      {/* Brand Logo Skeleton */}
+      <div className="w-14 h-14 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded-xl animate-pulse flex-shrink-0" />
+      
+      {/* Content Skeleton */}
+      <div className="flex-1 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-20 h-5 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse" />
+          <div className="w-24 h-4 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse" />
+        </div>
+        <div className="w-32 h-3 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse" />
+        <div className="w-24 h-3 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse" />
+      </div>
+      
+      {/* Price Skeleton */}
+      <div className="text-right space-y-2">
+        <div className="w-24 h-6 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse" />
+        <div className="w-16 h-3 bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded animate-pulse ml-auto" />
+      </div>
+    </div>
+  </div>
+);
+
+const SkeletonRankBadge = () => (
+  <div className="w-7 h-7 rounded-full bg-gray-200/80 dark:bg-[#1c1f29]/80 animate-pulse" />
+);
 
 export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ className = '' }) => {
   const navigate = useNavigate();
@@ -22,13 +53,44 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [modelsLoading, setModelsLoading] = useState(false);
 
+  // Memoized options for CustomSelect
+  const brandOptions = useMemo(() => 
+    availableBrands.map(brand => ({
+      value: brand,
+      label: brand.charAt(0).toUpperCase() + brand.slice(1)
+    })),
+    [availableBrands]
+  );
+
+  const modelOptions = useMemo(() => 
+    availableModels.map(model => ({
+      value: model,
+      label: model
+    })),
+    [availableModels]
+  );
+
+  const quantityOptions = useMemo(() => [
+    { value: '', label: 'All quantities' },
+    { value: '1', label: '1' },
+    { value: '2', label: '2' },
+    { value: '3', label: '3' },
+    { value: '5', label: '5' },
+    { value: '10', label: '10' },
+  ], []);
+
+  const daysOptions = useMemo(() => [
+    { value: '1', label: '1 day' },
+    { value: '2', label: '2 days' },
+    { value: '3', label: '3 days' },
+    { value: 'all', label: 'ALL' },
+  ], []);
+
   useEffect(() => {
     const fetchBrands = async () => {
       try {
         setBrandsLoading(true);
-        console.log('Fetching brands...');
         const brands = await getAvailableBrands();
-        console.log('Fetched brands:', brands);
         setAvailableBrands(brands);
         if (brands.length > 0 && !selectedBrand) {
           setSelectedBrand(brands[0]);
@@ -49,9 +111,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
       const fetchModels = async () => {
         try {
           setModelsLoading(true);
-          console.log('Fetching models for brand:', selectedBrand);
           const models = await getAvailableModels(selectedBrand);
-          console.log('Fetched models:', models);
           setAvailableModels(models);
           if (models.length > 0 && !selectedModel) {
             setSelectedModel(models[0]);
@@ -73,7 +133,6 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
       const fetchOfferings = async () => {
         try {
           setLoading(true);
-          console.log('Fetching offerings with brand, model, quantity, days:', selectedBrand, selectedModel, selectedQuantity, selectedDays);
           const data = await getTodayOfferingsByBrand(selectedBrand, selectedModel, selectedQuantity, selectedDays);
           setOfferings(data);
         } catch (error) {
@@ -93,32 +152,28 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
     setSelectedModel(''); // Reset model when brand changes
   };
 
-  const handleModelChange = (model: string) => {
-    console.log('Model changed to:', model);
-    setSelectedModel(model);
-  };
-
-  const handleQuantityChange = (quantity: string) => {
-    console.log('Quantity changed to:', quantity);
-    setSelectedQuantity(quantity);
-  };
-
-  const handleDaysChange = (days: string) => {
-    console.log('Days changed to:', days);
-    setSelectedDays(days);
-  };
-
   return (
-    <div className={`bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 ${className}`}>
+    <div className={`
+      bg-white/80 dark:bg-[#151821]/80 
+      backdrop-blur-sm 
+      rounded-2xl 
+      border border-gray-200/50 dark:border-gray-700/50
+      shadow-lg shadow-black/5
+      hover:shadow-xl hover:shadow-black/10
+      transition-all duration-300
+      ${className}
+    `}>
       {/* Header */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+      <div className="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <TrendingDown className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <div className="p-2 bg-[#128c7e]/10 dark:bg-[#128c7e]/20 rounded-xl backdrop-blur-sm">
+                <TrendingDown className="w-5 h-5 text-[#128c7e]" />
+              </div>
               Lowest Price Offerings
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Filter by brand, model, quantity, and days
             </p>
           </div>
@@ -126,99 +181,39 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
           {/* Filters */}
           <div className="flex items-center gap-2">
             {/* Brand Selector */}
-            <div className="relative">
-              {brandsLoading ? (
-                <div className="w-40 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
-              ) : (
-                <div className="relative">
-                  <select
-                    value={selectedBrand}
-                    onChange={(e) => handleBrandChange(e.target.value)}
-                    className="appearance-none w-40 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors cursor-pointer shadow-sm"
-                    style={{ zIndex: 10 }}
-                  >
-                    <option value="" disabled>
-                      {availableBrands.length === 0 ? 'No brands available' : 'Select brand'}
-                    </option>
-                    {availableBrands.map((brand) => (
-                      <option key={brand} value={brand} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                        {brand.charAt(0).toUpperCase() + brand.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-              )}
-            </div>
+            <CustomSelect
+              value={selectedBrand}
+              onChange={handleBrandChange}
+              options={brandOptions}
+              placeholder={availableBrands.length === 0 ? 'No brands' : 'Select brand'}
+              loading={brandsLoading}
+            />
 
             {/* Model Selector */}
-            <div className="relative">
-              {modelsLoading ? (
-                <div className="w-40 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
-              ) : (
-                <div className="relative">
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    disabled={!selectedBrand || availableModels.length === 0}
-                    className="appearance-none w-40 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ zIndex: 10 }}
-                  >
-                    <option value="" disabled>
-                      {availableModels.length === 0 ? 'No models available' : 'Select model'}
-                    </option>
-                    {availableModels.map((model) => (
-                      <option key={model} value={model} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-              )}
-            </div>
+            <CustomSelect
+              value={selectedModel}
+              onChange={setSelectedModel}
+              options={modelOptions}
+              placeholder={availableModels.length === 0 ? 'No models' : 'Select model'}
+              disabled={!selectedBrand || availableModels.length === 0}
+              loading={modelsLoading}
+            />
 
             {/* Quantity Selector */}
-            <div className="relative">
-              <select
-                    value={selectedQuantity}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    className="appearance-none w-32 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors cursor-pointer shadow-sm"
-                    style={{ zIndex: 10 }}
-                  >
-                    <option value="">All quantities</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  </div>
-            </div>
+            <CustomSelect
+              value={selectedQuantity}
+              onChange={setSelectedQuantity}
+              options={quantityOptions}
+              width="w-36"
+            />
 
             {/* Days Selector */}
-            <div className="relative">
-              <select
-                    value={selectedDays}
-                    onChange={(e) => handleDaysChange(e.target.value)}
-                    className="appearance-none w-32 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors cursor-pointer shadow-sm"
-                    style={{ zIndex: 10 }}
-                  >
-                    <option value="1">1 day</option>
-                    <option value="2">2 days</option>
-                    <option value="3">3 days</option>
-                    <option value="all">ALL</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  </div>
-            </div>
+            <CustomSelect
+              value={selectedDays}
+              onChange={setSelectedDays}
+              options={daysOptions}
+              width="w-32"
+            />
           </div>
         </div>
       </div>
@@ -226,37 +221,63 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
       {/* Content */}
       <div className="p-6">
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader type="default" />
-            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Loading offerings...</span>
+          // Skeleton Loading State
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="relative">
+                <div className="absolute left-2 top-2 z-10">
+                  <SkeletonRankBadge />
+                </div>
+                <div className="ml-9">
+                  <SkeletonCard />
+                </div>
+              </div>
+            ))}
           </div>
         ) : offerings.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-              <TrendingDown className="w-8 h-8 text-gray-400" />
+          // Empty State
+          <div className="text-center py-12">
+            <div className="
+              w-20 h-20 
+              bg-gradient-to-br from-gray-100 to-gray-200 dark:from-[#1c1f29] dark:to-[#242a38]
+              rounded-2xl 
+              flex items-center justify-center 
+              mx-auto mb-4
+              shadow-inner
+            ">
+              <EmptyIcon className="w-10 h-10 text-gray-400 dark:text-gray-500" />
             </div>
-            <p className="text-gray-600 dark:text-gray-400">
+            <p className="text-gray-500 dark:text-gray-400">
               {selectedBrand ? `No offerings found for ${selectedBrand} in selected time period` : 'Select a brand to view offerings'}
             </p>
           </div>
         ) : (
+          // Offerings List
           <div className="space-y-3">
             {offerings.map((offering, index) => (
-              <div key={offering.id} className="relative">
+              <div key={offering.id} className="relative group">
                 {/* Rank Badge */}
                 <div className="absolute left-2 top-2 z-10">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    index === 0 ? 'bg-yellow-500 text-white' :
-                    index === 1 ? 'bg-gray-400 text-white' :
-                    index === 2 ? 'bg-orange-600 text-white' :
-                    'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                  }`}>
+                  <div className={`
+                    w-7 h-7 
+                    rounded-full 
+                    flex items-center justify-center 
+                    text-xs font-bold
+                    shadow-md
+                    transform transition-transform duration-200 group-hover:scale-110
+                    ${
+                      index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-500 text-white shadow-yellow-500/30' :
+                      index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-white shadow-gray-400/30' :
+                      index === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-500 text-white shadow-orange-500/30' :
+                      'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-[#2a2f3a] dark:to-[#343b4a] text-gray-700 dark:text-gray-300 shadow-black/5'
+                    }
+                  `}>
                     {index + 1}
                   </div>
                 </div>
                 
                 {/* Offering Card */}
-                <div className="ml-8">
+                <div className="ml-9">
                   <OfferingCard
                     message={offering}
                     onClick={() => navigate(`/message/${offering.id}`, { 
@@ -275,12 +296,12 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
 
       {/* Footer */}
       {offerings.length > 0 && (
-        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-800">
+        <div className="px-6 py-4 bg-gray-50/80 dark:bg-[#1c1f29]/80 border-t border-gray-200/50 dark:border-gray-700/50 backdrop-blur-sm rounded-b-2xl">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-400">
+            <span className="text-gray-500 dark:text-gray-400">
               Showing {offerings.length} offerings from {selectedBrand}
             </span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+            <span className="text-[#128c7e] font-semibold">
               Lowest: ₹{Math.min(...offerings.map(o => o.parsedData?.price || 0)).toLocaleString('en-IN')}
             </span>
           </div>

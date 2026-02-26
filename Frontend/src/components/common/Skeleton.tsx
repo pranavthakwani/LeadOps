@@ -1,101 +1,25 @@
 import React from 'react';
 
 export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse bg-gray-200 dark:bg-gray-800 rounded ${className}`} />
+  <div className={`animate-pulse bg-gray-200/80 dark:bg-[#1c1f29]/80 rounded-xl backdrop-blur-sm ${className}`} />
 );
 
-export const SearchSkeleton: React.FC = () => (
-  <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-    <div className="divide-y divide-gray-200 dark:divide-gray-800">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="p-6">
-          <div className="flex items-start justify-between gap-6">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-5 w-16 rounded-full" />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-4 w-28" />
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-4 w-36" />
-                  </div>
-                  <Skeleton className="h-8 w-20 rounded" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
+export const SkeletonPulse: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div className={`animate-pulse ${className}`} />
 );
 
-export const MessageRowSkeleton: React.FC = () => (
-  <div className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4 animate-pulse">
-    <div className="flex items-center gap-8 pr-4">
-      {/* Brand Logo Skeleton */}
-      <div className="flex-shrink-0">
-        <div className="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
-      </div>
-
-      {/* Product Details Skeleton */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        </div>
-        
-        {/* RAM/ROM Skeleton */}
-        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
-
-        {/* Additional Details Skeleton */}
-        <div className="flex items-center gap-3">
-          <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          <div className="h-3 w-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        </div>
-      </div>
-
-      {/* Price + Quantity Skeleton */}
-      <div className="flex-shrink-0 text-right mr-3">
-        <div className="flex items-baseline justify-end gap-2">
-          <div className="h-6 w-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        </div>
-        
-        {/* Date Skeleton */}
-        <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded mt-1 ml-auto"></div>
-      </div>
-    </div>
-
-    {/* Sender Info Skeleton */}
-    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-      <div className="flex items-center gap-2">
-        <div className="h-3 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        <div className="h-3 w-4 bg-gray-200 dark:bg-gray-700 rounded"></div>
-        <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-      </div>
-      
-      {/* Badge Skeleton */}
-      <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-    </div>
-  </div>
-);
-
+// Dashboard Skeleton
 export const DashboardSkeleton: React.FC = () => (
   <div className="p-8 space-y-6">
-    <div className="grid grid-cols-3 gap-6">
+    {/* Stat Cards */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-all cursor-pointer">
+        <div 
+          key={i} 
+          className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm"
+        >
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-900/50">
+            <div className="p-3 rounded-xl bg-gray-100/80 dark:bg-[#1c1f29]/80 backdrop-blur-sm">
               <Skeleton className="h-6 w-6" />
             </div>
           </div>
@@ -107,48 +31,31 @@ export const DashboardSkeleton: React.FC = () => (
       ))}
     </div>
 
-    <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-        <Skeleton className="h-4 w-48 mb-1" />
+    {/* Brand Offerings Card */}
+    <div className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+      <div className="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
+        <Skeleton className="h-6 w-48" />
       </div>
-      <div className="divide-y divide-gray-200 dark:divide-gray-800">
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
-          <div key={i} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer transition-colors">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-1">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-16 rounded-full" />
-                </div>
-                <Skeleton className="h-4 w-full" />
-              </div>
-              <Skeleton className="h-4 w-12" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
-
-export const ContactsSkeleton: React.FC = () => (
-  <div className="p-8">
-    <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-      </div>
-      <div className="divide-y divide-gray-200 dark:divide-gray-800">
-        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+      <div className="divide-y divide-gray-200/50 dark:divide-gray-700/50">
+        {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="p-4">
             <div className="flex items-center gap-4">
-              <Skeleton className="h-12 w-12 rounded-full" />
+              <Skeleton className="w-7 h-7 rounded-full" />
               <div className="flex-1">
-                <Skeleton className="h-5 w-32 mb-2" />
-                <Skeleton className="h-4 w-24 mb-1" />
-                <Skeleton className="h-4 w-36" />
-              </div>
-              <div className="text-right">
-                <Skeleton className="h-4 w-16 mb-2" />
-                <Skeleton className="h-4 w-20" />
+                <div className="flex items-center gap-5">
+                  <Skeleton className="w-14 h-14 rounded-xl" />
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                  <div className="text-right space-y-2">
+                    <Skeleton className="h-6 w-24" />
+                    <Skeleton className="h-3 w-16 ml-auto" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -158,35 +65,171 @@ export const ContactsSkeleton: React.FC = () => (
   </div>
 );
 
-export const SettingsSkeleton: React.FC = () => (
-  <div className="p-8">
-    <div className="bg-white dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
-      <div className="p-6 space-y-6">
-        <div className="space-y-4">
-          <div>
-            <Skeleton className="h-4 w-24 mb-2" />
-            <Skeleton className="h-10 w-64" />
+// Search Skeleton
+export const SearchSkeleton: React.FC = () => (
+  <div className="space-y-3">
+    {/* Search Input Skeleton */}
+    <Skeleton className="h-14 w-full rounded-2xl mb-6" />
+    
+    {/* Filters Skeleton */}
+    <Skeleton className="h-16 w-full rounded-2xl mb-6" />
+    
+    {/* Results */}
+    {[1, 2, 3, 4, 5].map((i) => (
+      <div 
+        key={i} 
+        className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 p-4 shadow-sm"
+      >
+        <div className="flex items-start gap-5">
+          <Skeleton className="w-14 h-14 rounded-xl flex-shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-3 w-24" />
           </div>
-          <div>
-            <Skeleton className="h-4 w-20 mb-2" />
-            <Skeleton className="h-10 w-48" />
+          <div className="text-right space-y-2">
+            <Skeleton className="h-6 w-20" />
+            <Skeleton className="h-3 w-16 ml-auto" />
           </div>
         </div>
       </div>
-      
-      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+    ))}
+  </div>
+);
+
+// Message Row Skeleton
+export const MessageRowSkeleton: React.FC = () => (
+  <div className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 p-4 shadow-sm">
+    <div className="flex items-center gap-5">
+      {/* Brand Logo Skeleton */}
+      <Skeleton className="w-14 h-14 rounded-xl flex-shrink-0" />
+
+      {/* Product Details Skeleton */}
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-4 w-24" />
+        </div>
+        <Skeleton className="h-3 w-32" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      </div>
+
+      {/* Price + Quantity Skeleton */}
+      <div className="flex-shrink-0 text-right space-y-2">
+        <Skeleton className="h-6 w-20" />
+        <Skeleton className="h-3 w-16 ml-auto" />
+      </div>
+    </div>
+
+    {/* Sender Info Skeleton */}
+    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100/50 dark:border-gray-700/50">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-3 w-4" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+      <Skeleton className="h-5 w-20 rounded-full" />
+    </div>
+  </div>
+);
+
+// Contacts Skeleton
+export const ContactsSkeleton: React.FC = () => (
+  <div className="space-y-3">
+    {/* Search Skeleton */}
+    <Skeleton className="h-12 w-full rounded-2xl mb-4" />
+    
+    {/* Contact Items */}
+    {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+      <div 
+        key={i} 
+        className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 p-4 shadow-sm"
+      >
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <div className="text-right space-y-2">
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+// Settings Skeleton
+export const SettingsSkeleton: React.FC = () => (
+  <div className="space-y-6">
+    {[1, 2].map((card) => (
+      <div 
+        key={card}
+        className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 p-6 shadow-sm"
+      >
+        <div className="flex items-center gap-2 mb-5">
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <Skeleton className="h-5 w-32" />
+        </div>
+        
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-center justify-between">
-              <div>
-                <Skeleton className="h-4 w-32 mb-1" />
-                <Skeleton className="h-4 w-48" />
+            <div key={i} className="flex items-center justify-between py-2">
+              <div className="space-y-1">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-40" />
               </div>
-              <Skeleton className="h-6 w-12 rounded" />
+              <Skeleton className="h-8 w-20 rounded-lg" />
             </div>
           ))}
         </div>
       </div>
+    ))}
+  </div>
+);
+
+// Inbox Skeleton
+export const InboxSkeleton: React.FC = () => (
+  <div className="space-y-4">
+    {/* Tabs Skeleton */}
+    <Skeleton className="h-12 w-64 rounded-2xl" />
+    
+    {/* Filter Skeleton */}
+    <Skeleton className="h-16 w-full rounded-2xl mb-6" />
+    
+    {/* Message List */}
+    <div className="space-y-3">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <MessageRowSkeleton key={i} />
+      ))}
     </div>
+  </div>
+);
+
+// Chat Message Skeleton
+export const ChatMessageSkeleton: React.FC = () => (
+  <div className="space-y-4 px-4">
+    {[1, 2, 3, 4, 5, 6].map((i) => (
+      <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+        <div 
+          className={`max-w-[70%] p-3 rounded-2xl ${
+            i % 2 === 0 
+              ? 'bg-[#d9fdd3] dark:bg-[#005c4b]' 
+              : 'bg-white dark:bg-[#202c33]'
+          }`}
+        >
+          <Skeleton className="h-4 w-48 mb-2" />
+          <Skeleton className="h-3 w-16 ml-auto" />
+        </div>
+      </div>
+    ))}
   </div>
 );

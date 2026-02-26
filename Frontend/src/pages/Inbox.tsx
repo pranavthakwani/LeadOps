@@ -7,6 +7,7 @@ import { Loader } from '../components/common/Loader';
 import { useMessages } from '../hooks/useMessages';
 import { useIgnoredMessages } from '../hooks/useIgnoredMessages';
 import { useDebounce } from '../hooks/useDebounce';
+import { Search } from 'lucide-react';
 
 type TabType = 'leads' | 'offerings' | 'ignored';
 
@@ -107,46 +108,43 @@ export const Inbox: React.FC = () => {
     return activeTab === 'ignored' ? ignoredError : messagesError;
   };
 
+  const getAccentColor = () => {
+    switch (activeTab) {
+      case 'leads': return 'var(--accent-primary)';
+      case 'offerings': return '#3b82f6';
+      case 'ignored': return 'var(--text-tertiary)';
+      default: return 'var(--accent-primary)';
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col">
+      {/* Header Section */}
       <div className="p-8 flex-shrink-0">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Inbox</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage your WhatsApp messages</p>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2 tracking-tight">
+            Inbox
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400">
+            Manage your WhatsApp messages
+          </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6">
-          <button
-            onClick={() => setActiveTab('leads')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              activeTab === 'leads'
-                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            Leads
-          </button>
-          <button
-            onClick={() => setActiveTab('offerings')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              activeTab === 'offerings'
-                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            Offerings
-          </button>
-          <button
-            onClick={() => setActiveTab('ignored')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              activeTab === 'ignored'
-                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            Ignored
-          </button>
+        {/* Tabs - Refined design with transparency */}
+        <div className="flex gap-1 mb-6 p-1 bg-gray-100/70 dark:bg-[#1c1f29]/70 backdrop-blur-sm rounded-2xl inline-flex">
+          {(['leads', 'offerings', 'ignored'] as TabType[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                activeTab === tab
+                  ? 'bg-white dark:bg-[#151821] text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
         </div>
 
         {/* Filters - only show for leads and offerings */}
@@ -161,19 +159,36 @@ export const Inbox: React.FC = () => {
 
         {/* Search for ignored messages */}
         {activeTab === 'ignored' && (
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Search ignored messages..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-            />
+          <div className="backdrop-blur-md bg-white/70 dark:bg-[#151821]/70 border border-white/20 dark:border-white/10 rounded-2xl p-4 mb-6 shadow-sm">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <input
+                type="text"
+                placeholder="Search ignored messages..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-white/80 dark:bg-[#1c1f29]/80 border border-gray-200/50 dark:border-gray-700/50 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-[#128c7e] focus:ring-opacity-40 placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-all text-sm backdrop-blur-sm"
+              />
+            </div>
           </div>
         )}
       </div>
 
+      {/* Messages List */}
       <div className="flex-1 overflow-y-auto px-8 pb-8">
+        {/* Accent line indicator */}
+        <div className="flex items-center gap-3 mb-4">
+          <div 
+            className="w-[3px] h-6 rounded-full"
+            style={{ backgroundColor: getAccentColor() }}
+          />
+          <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+            {activeTab === 'leads' && 'New Leads'}
+            {activeTab === 'offerings' && 'Product Offerings'}
+            {activeTab === 'ignored' && 'Ignored Messages'}
+          </span>
+        </div>
+
         {getCurrentLoading() ? (
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -181,7 +196,7 @@ export const Inbox: React.FC = () => {
             ))}
           </div>
         ) : getCurrentError() ? (
-          <div className="text-center py-8 text-red-600 dark:text-red-400">{getCurrentError()}</div>
+          <div className="text-center py-8 text-red-500">{getCurrentError()}</div>
         ) : activeTab === 'ignored' ? (
           <IgnoredMessageList 
             messages={filteredIgnoredMessages} 

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { User, X, Reply, Send, ChevronDown } from 'lucide-react';
 import { chatApi } from '../../services/chatApi';
 import { SOCKET_BASE_URL } from '../../config/network';
 import type { Message } from '../../types/message';
 import { ContactModal } from '../common/ContactModal';
+import { Loader } from '../common/Loader';
 
 // Helper functions
 const formatISTDate = (date: Date) => {
@@ -591,47 +592,49 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <style>{highlightStyles}</style>
       
       <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a]">
-        {/* Chat Header - WhatsApp Style */}
-        <div className="bg-[#075e54] dark:bg-[#0b141a] px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center">
-              {conversationData?.display_name ? (
-                <span className="text-white font-semibold text-sm">
-                  {conversationData.display_name.charAt(0).toUpperCase()}
-                </span>
-              ) : (
-                <User className="w-6 h-6 text-white" />
+        {/* Chat Header - Frosted translucent with rounded corners */}
+        <div className="sticky top-0 z-20 mx-4 mt-3 mb-2">
+          <div className="backdrop-blur-xl bg-[#075e54]/85 dark:bg-[#0b141a]/85 px-4 py-3 flex items-center justify-between rounded-2xl shadow-lg shadow-black/20 border border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center shadow-md">
+                {conversationData?.display_name ? (
+                  <span className="text-white font-semibold text-sm">
+                    {conversationData.display_name.charAt(0).toUpperCase()}
+                  </span>
+                ) : (
+                  <User className="w-6 h-6 text-white" />
+                )}
+              </div>
+              <div>
+                <h2 className="font-semibold text-white drop-shadow-sm">
+                  {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
+                </h2>
+                <p className="text-xs text-[#dcf8c6]/90">
+                  {conversationData?.phone_number || conversationData?.jid || 'No number'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Save Contact Button */}
+              {conversationData && !conversationData.contact_id && (
+                <button
+                  onClick={handleSaveContactClick}
+                  disabled={isSavingContact}
+                  className="bg-[#128c7e] hover:bg-[#0d6d5f] text-white px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-50 shadow-md"
+                >
+                  {isSavingContact ? 'Saving...' : 'Save Contact'}
+                </button>
               )}
             </div>
-            <div>
-              <h2 className="font-semibold text-white">
-                {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
-              </h2>
-              <p className="text-xs text-[#dcf8c6]">
-                {conversationData?.phone_number || conversationData?.jid || 'No number'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {/* Save Contact Button */}
-            {conversationData && !conversationData.contact_id && (
-              <button
-                onClick={handleSaveContactClick}
-                disabled={isSavingContact}
-                className="bg-[#128c7e] hover:bg-[#0d6d5f] text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-              >
-                {isSavingContact ? 'Saving...' : 'Save Contact'}
-              </button>
-            )}
           </div>
         </div>
 
         {/* Messages Area - WhatsApp Style */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1" ref={messagesContainerRef}>
           {isLoading ? (
-            <div className="flex justify-center items-center h-full">
-              <div className="text-gray-500 dark:text-gray-400">Loading messages...</div>
+            <div className="flex-1 h-full">
+              <Loader type="chat" />
             </div>
           ) : chatMessages.length === 0 ? (
             <div className="flex justify-center items-center h-full">

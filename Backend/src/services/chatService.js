@@ -94,10 +94,11 @@ export const chatService = {
       text,
       timestamp,
       quotedMessageId: quotedId,
-      quotedText // Only store factual data
+      quotedText, // Only store factual data
+      rawMessage: JSON.stringify(message) // Store full raw WhatsApp message for quoting
     });
 
-    logger.info('Message stored in DB', { waMessageId, quotedId, quotedText });
+    logger.info('Message stored in DB', { waMessageId, quotedId, quotedText, hasRawMessage: true });
 
     // Emit to Socket.IO for real-time updates using conversation_id
     if (global.io && conversationId) {
@@ -228,10 +229,21 @@ export const chatService = {
       text,
       timestamp,
       quotedMessageId,
-      quotedText // Only store factual data
+      quotedText, // Only store factual data
+      rawMessage: JSON.stringify({
+        key: {
+          id: waMessageId,
+          remoteJid: jid,
+          fromMe: true
+        },
+        message: {
+          conversation: text
+        },
+        messageTimestamp: Math.floor(timestamp / 1000)
+      }) // Store raw message for quoting
     });
 
-    logger.info('Outgoing message stored in DB', { waMessageId, quotedMessageId, quotedText });
+    logger.info('Outgoing message stored in DB', { waMessageId, quotedMessageId, quotedText, hasRawMessage: true });
 
     // Get conversation ID for socket emission
     const conversation = await chatRepository.getConversationByJid(jid);

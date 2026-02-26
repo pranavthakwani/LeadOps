@@ -3,6 +3,7 @@ import { Users, Search, Edit } from 'lucide-react';
 import { chatApi } from '../services/chatApi';
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { EditContactModal } from '../components/common/EditContactModal';
+import { Loader } from '../components/common/Loader';
 
 interface Contact {
   id: number;
@@ -199,7 +200,7 @@ export const ContactsPage: React.FC = () => {
                 placeholder="Search contacts..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#128c7e]"
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-[#128c7e]"
               />
             </div>
           </div>
@@ -208,8 +209,8 @@ export const ContactsPage: React.FC = () => {
         {/* Contacts List */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-[#128c7e] border-t-transparent animate-spin rounded-full"></div>
+            <div className="p-4">
+              <Loader type="contacts" />
             </div>
           ) : filteredContacts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
@@ -222,7 +223,12 @@ export const ContactsPage: React.FC = () => {
             filteredContacts.map((contact) => (
               <div
                 key={contact.id}
-                className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                onClick={() => handleContactClick(contact)}
+                className={`flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer rounded-lg mx-2 mb-1 ${
+                  selectedContact?.id === contact.id 
+                    ? 'bg-gray-100 dark:bg-gray-700' 
+                    : ''
+                }`}
               >
                 {/* Avatar */}
                 <div className="w-12 h-12 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center mr-3">
@@ -234,10 +240,7 @@ export const ContactsPage: React.FC = () => {
                 {/* Contact Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <h3 
-                      className="font-semibold text-gray-900 dark:text-white truncate cursor-pointer"
-                      onClick={() => handleContactClick(contact)}
-                    >
+                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                       {contact.display_name}
                     </h3>
                     <div className="flex items-center gap-2">
@@ -251,17 +254,14 @@ export const ContactsPage: React.FC = () => {
                           e.stopPropagation();
                           handleEditContact(contact);
                         }}
-                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
                         title="Edit contact"
                       >
                         <Edit className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                       </button>
                     </div>
                   </div>
-                  <p 
-                    className="text-sm text-gray-500 dark:text-gray-400 truncate cursor-pointer"
-                    onClick={() => handleContactClick(contact)}
-                  >
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                     {contact.last_message_preview ? (
                       <>
                         {contact.last_message_from_me && (

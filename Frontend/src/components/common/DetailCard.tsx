@@ -18,16 +18,16 @@ const getBrandLogo = (brand: string | undefined) => {
     'vivo': '/assets/brands/vivo.png',
     'realme': '/assets/brands/realme.png',
     'oneplus': '/assets/brands/one plus.png',
-    'iqoo': '/assets/brands/iqoo.jpeg', // Using vivo as placeholder
+    'iqoo': '/assets/brands/iqoo.jpeg',
     'redmi': '/assets/brands/redmi.webp',
     'xiaomi': '/assets/brands/xiaomi.png',
     'motorola': '/assets/brands/moto.png',
     'moto': '/assets/brands/moto.png',
-    'acer': '/assets/brands/noting.avif', // Placeholder
-    'lenovo': '/assets/brands/noting.avif', // Placeholder
-    'nokia': '/assets/brands/nokia.png', // Placeholder
-    'asus': '/assets/brands/noting.avif', // Placeholder
-    'huawei': '/assets/brands/noting.avif', // Placeholder
+    'acer': '/assets/brands/noting.avif',
+    'lenovo': '/assets/brands/noting.avif',
+    'nokia': '/assets/brands/nokia.png',
+    'asus': '/assets/brands/noting.avif',
+    'huawei': '/assets/brands/noting.avif',
     'poco': '/assets/brands/poco.png',
     'infinix': '/assets/brands/Infinix.png',
     'tecno': '/assets/brands/tecno.png',
@@ -65,18 +65,17 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
   return (
     <div
       onClick={onClick}
-      className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer"
+      className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-4 hover:shadow-lg hover:border-emerald-300/50 dark:hover:border-emerald-600/50 transition-all cursor-pointer group"
     >
-      <div className="flex items-center gap-6 pr-3">
+      <div className="flex items-center gap-5">
         {/* Brand Logo */}
         <div className="flex-shrink-0">
           {brandLogo ? (
             <img 
               src={brandLogo} 
               alt={message.parsedData?.brand || 'Brand'}
-              className="w-16 h-16 object-contain rounded-lg bg-white dark:bg-gray-900 p-1"
+              className="w-14 h-14 object-contain rounded-[var(--radius-md)] bg-[var(--bg-elevated)] p-2 elevation-sm"
               onError={(e) => {
-                // Fallback to brand initial if image fails
                 const target = e.target as HTMLImageElement;
                 target.style.display = 'none';
                 const fallback = target.nextElementSibling as HTMLElement;
@@ -84,8 +83,8 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
               }}
             />
           ) : (
-            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg flex items-center justify-center">
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xl">
+            <div className="w-14 h-14 bg-[var(--accent-light)] rounded-[var(--radius-md)] flex items-center justify-center elevation-sm backdrop-blur-md">
+              <span className="text-[var(--accent-primary)] font-bold text-xl">
                 {message.parsedData?.brand?.charAt(0) || 'P'}
               </span>
             </div>
@@ -96,12 +95,12 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             {message.parsedData?.brand && (
-              <span className="font-semibold text-sm text-gray-900 dark:text-white">
+              <span className="font-semibold text-sm text-[var(--text-primary)]">
                 {message.parsedData.brand}
               </span>
             )}
             {message.parsedData?.model && (
-              <span className="text-gray-600 dark:text-gray-400 text-sm">
+              <span className="text-[var(--text-secondary)] text-sm">
                 {message.parsedData.model}
               </span>
             )}
@@ -109,7 +108,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
           
           {/* RAM/ROM */}
           {(message.parsedData?.ram || message.parsedData?.storage) && (
-            <div className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="text-xs text-[var(--text-tertiary)]">
               {message.parsedData?.ram && <span>{message.parsedData.ram}</span>}
               {message.parsedData?.ram && message.parsedData?.storage && <span> / </span>}
               {message.parsedData?.storage && <span>{message.parsedData.storage}</span>}
@@ -117,7 +116,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
           )}
 
           {/* Additional Details */}
-          <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <div className="flex items-center gap-3 text-xs text-[var(--text-tertiary)] mt-1">
             {colorDisplay && (
               <span>Color: {colorDisplay.name}</span>
             )}
@@ -128,15 +127,15 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
         </div>
 
         {/* Price + Quantity */}
-        <div className="flex-shrink-0 text-right mr-2">
-          <div className="flex items-baseline justify-end gap-2 text-lg font-bold text-emerald-600 dark:text-emerald-400">
+        <div className="flex-shrink-0 text-right">
+          <div className="flex items-baseline justify-end gap-2 text-lg font-semibold text-[var(--accent-primary)]">
             
             {message.parsedData?.quantity && (
               <>
-                <span className="text-sm text-gray-800 dark:text-gray-800">
+                <span className="text-sm text-[var(--text-primary)]">
                   {message.parsedData.quantity}
                 </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="text-xs text-[var(--text-tertiary)]">
                   units
                 </span>
               </>
@@ -144,37 +143,40 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
 
             {message.parsedData?.price && (
               <span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">@</span>
+                <span className="text-sm text-[var(--text-tertiary)]">@</span>
                 ₹{message.parsedData.price.toLocaleString('en-IN')}
-                <span className="text-xs text-gray-500 dark:text-gray-400">/-</span>
+                <span className="text-xs text-[var(--text-tertiary)]">/-</span>
               </span>
             )}
           </div>
           
           {/* Date */}
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
+          <div className="text-xs text-[var(--text-tertiary)] mt-1 text-right">
             {formatISTDateTime(message.timestamp)}
           </div>
         </div>
       </div>
 
       {/* Sender Info */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <span className="font-medium">{message.sender}</span>
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-subtle)]">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          <span className="font-medium text-[var(--text-secondary)]">{message.sender}</span>
           <span>•</span>
           <span>{message.senderNumber}</span>
         </div>
         
-        {/* Classification Badge - Moved to left side */}
+        {/* Classification Badge */}
         <div className="flex items-center gap-2">
           {message.detectedBrands.length > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 rounded-full text-xs font-medium border border-emerald-200 dark:border-emerald-800">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-[var(--accent-light)] text-[var(--accent-primary)] rounded-full text-xs font-medium">
               {message.detectedBrands.join(', ')}
             </span>
           )}
         </div>
       </div>
+
+      {/* Hover border glow */}
+      <div className="absolute inset-0 rounded-[var(--radius-lg)] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none glow-soft" />
     </div>
   );
 };

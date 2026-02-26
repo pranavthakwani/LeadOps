@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, Filter } from 'lucide-react';
+import { Search as SearchIcon, Filter, Sparkles } from 'lucide-react';
 import { MessageRow } from '../components/inbox/MessageRow';
 import { Loader } from '../components/common/Loader';
 import { useDebounce } from '../hooks/useDebounce';
@@ -48,67 +48,79 @@ export const Search: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="p-8 flex-shrink-0">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Search</h1>
-          <p className="text-gray-600 dark:text-gray-400">Search through all business products and messages</p>
+    <div className="h-screen flex flex-col items-center">
+      {/* Constrained width container */}
+      <div className="w-full max-w-[900px] px-8 py-8 flex-shrink-0">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-2 tracking-tight">
+            Search
+          </h1>
+          <p className="text-[var(--text-secondary)]">
+            Search through all business products and messages
+          </p>
         </div>
 
-        {/* Search Input */}
-        <div className="mb-6">
-          <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search for products like 'tecno', 'iphone 15', or any keywords..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-            />
+        {/* Search Input - Floating pill with transparency */}
+        <div className="mb-6 relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10">
+            <SearchIcon className="w-5 h-5 text-gray-400 dark:text-gray-500" />
           </div>
+          <input
+            type="text"
+            placeholder="Search for products like 'tecno', 'iphone 15', or any keywords..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-4 bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 text-gray-900 dark:text-white rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[#128c7e] focus:ring-opacity-40 placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-all text-base"
+          />
+          {/* Subtle glow effect behind icon */}
+          {!debouncedSearch && (
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 -ml-2.5 -mt-5 bg-[#128c7e]/10 rounded-full blur-xl pointer-events-none" />
+          )}
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          {/* Type Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Type:</span>
-            <div className="flex gap-1">
-              {(['leads', 'offerings'] as SearchFilterType[]).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(type)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    filterType === type
-                      ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-                  }`}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
+        {/* Filters - Frosted translucent container */}
+        <div className="backdrop-blur-md bg-white/70 dark:bg-[#151821]/70 border border-white/20 dark:border-white/10 rounded-2xl p-4 mb-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Type Filter */}
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Type:</span>
+              <div className="flex gap-1 bg-white/50 dark:bg-[#1c1f29]/50 backdrop-blur-sm rounded-xl p-1">
+                {(['leads', 'offerings'] as SearchFilterType[]).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setFilterType(type)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                      filterType === type
+                        ? 'bg-[#128c7e]/20 text-[#128c7e] dark:bg-[#128c7e]/30 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-white/60 dark:hover:bg-[#2a2f3a]/60'
+                    }`}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Time Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Time:</span>
-            <div className="flex gap-1">
-              {(['all', 'today', '24h', 'week', 'month'] as TimeFilterType[]).map((time) => (
-                <button
-                  key={time}
-                  onClick={() => setTimeFilter(time)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    timeFilter === time
-                      ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-                  }`}
-                >
-                  {time === '24h' ? '24 Hrs' : time.charAt(0).toUpperCase() + time.slice(1)}
-                </button>
-              ))}
+            {/* Time Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Time:</span>
+              <div className="flex gap-1 bg-white/50 dark:bg-[#1c1f29]/50 backdrop-blur-sm rounded-xl p-1">
+                {(['all', 'today', '24h', 'week', 'month'] as TimeFilterType[]).map((time) => (
+                  <button
+                    key={time}
+                    onClick={() => setTimeFilter(time)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                      timeFilter === time
+                        ? 'bg-[#128c7e]/20 text-[#128c7e] dark:bg-[#128c7e]/30 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-white/60 dark:hover:bg-[#2a2f3a]/60'
+                    }`}
+                  >
+                    {time === '24h' ? '24h' : time.charAt(0).toUpperCase() + time.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -116,7 +128,7 @@ export const Search: React.FC = () => {
         {/* Results Count */}
         {debouncedSearch && (
           <div className="mb-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-[var(--text-secondary)]">
               {loading ? 'Searching...' : `Found ${filteredMessages.length} result${filteredMessages.length !== 1 ? 's' : ''}`}
             </p>
           </div>
@@ -124,7 +136,7 @@ export const Search: React.FC = () => {
       </div>
 
       {/* Results */}
-      <div className="flex-1 overflow-y-auto px-8 pb-8">
+      <div className="flex-1 overflow-y-auto w-full max-w-[900px] px-8 pb-8">
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -132,18 +144,30 @@ export const Search: React.FC = () => {
             ))}
           </div>
         ) : error ? (
-          <div className="text-center py-8 text-red-600 dark:text-red-400">{error}</div>
+          <div className="text-center py-8 text-red-500">{error}</div>
         ) : !debouncedSearch ? (
-          <div className="text-center py-12">
-            <SearchIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Start Searching</h3>
-            <p className="text-gray-600 dark:text-gray-400">Enter keywords to search through all products and messages</p>
+          <div className="text-center py-16">
+            <div className="relative inline-block mb-6">
+              <SearchIcon className="w-16 h-16 text-[var(--text-tertiary)]/30" />
+              {/* Animated glow behind icon */}
+              <div className="absolute inset-0 bg-[var(--accent-primary)]/20 rounded-full blur-2xl animate-pulse" />
+            </div>
+            <h3 className="text-lg font-medium text-[var(--text-primary)] mb-2">
+              Start Searching
+            </h3>
+            <p className="text-[var(--text-secondary)]">
+              Enter keywords to search through all products and messages
+            </p>
           </div>
         ) : filteredMessages.length === 0 ? (
-          <div className="text-center py-12">
-            <SearchIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Results Found</h3>
-            <p className="text-gray-600 dark:text-gray-400">Try adjusting your search terms or filters</p>
+          <div className="text-center py-16">
+            <Sparkles className="w-12 h-12 text-[var(--text-tertiary)] mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-[var(--text-primary)] mb-2">
+              No Results Found
+            </h3>
+            <p className="text-[var(--text-secondary)]">
+              Try adjusting your search terms or filters
+            </p>
           </div>
         ) : (
           <div className="space-y-3">

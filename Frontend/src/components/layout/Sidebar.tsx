@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Settings, Moon, Sun, GripVertical, Search, Users } from 'lucide-react';
+import { LayoutDashboard, Inbox, Settings, Moon, Sun, Search, Users } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const navItems = [
@@ -11,9 +11,9 @@ const navItems = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
-export const Sidebar: React.FC = () => {
+export const Sidebar: React.FC = memo(() => {
   const { theme, toggleTheme } = useTheme();
-  const [sidebarWidth, setSidebarWidth] = useState(200); // Default width (shorter)
+  const [sidebarWidth, setSidebarWidth] = useState(220);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -27,8 +27,8 @@ export const Sidebar: React.FC = () => {
       if (!isResizing) return;
       
       const newWidth = e.clientX;
-      const maxWidth = window.innerWidth / 2; // Half screen width
-      const minWidth = 200; // Minimum width (same as default)
+      const maxWidth = window.innerWidth / 2;
+      const minWidth = 220;
       
       if (newWidth >= minWidth && newWidth <= maxWidth) {
         setSidebarWidth(newWidth);
@@ -54,19 +54,25 @@ export const Sidebar: React.FC = () => {
     <aside 
       ref={sidebarRef}
       style={{ width: `${sidebarWidth}px` }}
-      className="bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex flex-col relative"
+      className="sidebar flex flex-col relative z-20"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+      {/* Header */}
+      <div className="p-6 border-b border-[var(--border-soft)]">
         <div className="flex flex-col items-center gap-3">
-          <img 
-            src="/assets/JJEfav.png" 
-            alt="JJE Logo"
-            className="w-16 h-16 object-contain border border-gray-900 dark:border-gray-100 rounded-lg"
-          />
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Lead Ops</h1>
+          <div className="relative">
+            <img 
+              src="/assets/JJEfav.png" 
+              alt="JJE Logo"
+              className="w-14 h-14 object-contain rounded-[var(--radius-md)] elevation-sm"
+            />
+          </div>
+          <h1 className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+            Lead Ops
+          </h1>
         </div>
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => (
           <NavLink
@@ -74,32 +80,33 @@ export const Sidebar: React.FC = () => {
             to={item.to}
             end={item.to === '/'}
             className={({ isActive }) =>
-              `flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
+              `flex items-center gap-3 px-4 py-3 rounded-[var(--radius-md)] transition-all duration-[180ms] cubic-bezier(0.4,0,0.2,1) ${
                 isActive
-                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-medium border border-emerald-200 dark:border-emerald-800'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900/50'
+                  ? 'sidebar-item active'
+                  : 'sidebar-item'
               }`
             }
           >
-            <div className="flex items-center gap-3">
-              <item.icon className="w-5 h-5" />
-              <span className="flex-1 text-center">{item.label}</span>
-            </div>
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <span className="flex-1 text-sm font-medium">{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800 space-y-3">
-        <div className="text-xs text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span>System Online</span>
-          </div>
+      {/* Footer */}
+      <div className="p-4 border-t border-[var(--border-soft)] space-y-4">
+        {/* Status */}
+        <div className="flex items-center gap-3 px-3">
+          <div className="status-dot status-dot-pulse"></div>
+          <span className="text-xs font-medium text-[var(--text-secondary)]">
+            System Online
+          </span>
         </div>
         
+        {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface)] rounded-[var(--radius-md)] transition-all duration-[180ms] border border-[var(--border-subtle)] elevation-sm hover:elevation-md active:scale-[0.97]"
         >
           {theme === 'light' ? (
             <>
@@ -117,14 +124,13 @@ export const Sidebar: React.FC = () => {
 
       {/* Resize Handle */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-1 bg-gray-300 dark:bg-gray-600 hover:bg-emerald-500 cursor-col-resize transition-colors"
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize group"
         onMouseDown={handleMouseDown}
         style={{ cursor: isResizing ? 'col-resize' : 'col-resize' }}
       >
-        <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-emerald-500 opacity-0 hover:opacity-100 transition-opacity">
-          <GripVertical className="w-3 h-3 text-white" />
-        </div>
+        <div className="absolute inset-0 bg-transparent group-hover:bg-[var(--accent-primary)]/20 transition-colors" />
+        <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-[var(--accent-primary)] opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
       </div>
     </aside>
   );
-};
+});

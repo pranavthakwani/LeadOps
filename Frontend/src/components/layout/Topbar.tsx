@@ -23,34 +23,36 @@ export const Topbar: React.FC = () => {
   }, []);
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-6">
+    <header className="h-16 bg-[var(--bg-surface)]/80 backdrop-blur-sm border-b border-[var(--border-soft)] flex items-center justify-between px-6 sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Jay Jalaram Enterpise</h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">Jay Jalaram Enterprise</h2>
       </div>
 
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
+        {/* Connection Status */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)]">
           {health?.whatsappConnected ? (
             <>
-              <Wifi className="w-5 h-5 text-green-600" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Connected</span>
+              <div className="status-dot status-dot-pulse" />
+              <Wifi className="w-4 h-4 text-[var(--accent-primary)]" />
+              <span className="text-sm font-medium text-[var(--text-secondary)]">Connected</span>
             </>
           ) : (
             <>
-              <WifiOff className="w-5 h-5 text-red-600" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Disconnected</span>
+              <WifiOff className="w-4 h-4 text-red-500" />
+              <span className="text-sm font-medium text-red-500">Disconnected</span>
             </>
           )}
         </div>
 
-        <div className="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+        <div className="h-5 w-px bg-[var(--border-soft)]"></div>
 
-        <div className="text-sm text-gray-600 dark:text-gray-400">
+        {/* Date */}
+        <div className="text-sm text-[var(--text-secondary)] font-medium">
           {new Date().toLocaleDateString('en-IN', {
             weekday: 'short',
             day: 'numeric',
             month: 'short',
-            year: 'numeric',
           })}
         </div>
       </div>
