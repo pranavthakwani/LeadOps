@@ -1,7 +1,15 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { 
+  makeWASocket, 
+  useMultiFileAuthState, 
+  DisconnectReason, 
+  fetchLatestBaileysVersion,
+  BufferJSON,
+  proto,
+  delay
+} from '@whiskeysockets/baileys';
+import qrcode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
-import qrcode from 'qrcode-terminal';
 import { initWhatsAppConfig, getWhatsAppConfig } from '../config/whatsapp.js';
 import { createLogger } from '../utils/logger.js';
 import { processPipeline } from '../pipeline/index.js';
@@ -37,6 +45,13 @@ class BaileysService {
     this.isPairing = false;
     this.sentMessages = new Map(); // Track sent messages for read receipts
     
+    // New state variables for robust connection management
+    this.qrCode = null;
+    this.lastDisconnectReason = null;
+    this.connectionState = 'disconnected'; // 'disconnected', 'connecting', 'connected', 'qr_required'
+    this.lastConnected = null;
+    this.reconnectTimer = null;
+    
     // Initialize config first
     initWhatsAppConfig();
     
@@ -48,9 +63,13 @@ class BaileysService {
     }
     
     logger.info('📱 WhatsApp integration is ENABLED - Baileys service ready');
+    
+    // Auto-start the connection manager
+    this.startBaileys();
   }
 
-  async initialize() {
+  // Main connection manager - responsible for initializing the socket
+  async startBaileys() {
     if (this.isConnecting || this.isConnected) {
       logger.debug('Baileys service already connecting or connected');
       return;
@@ -58,40 +77,47 @@ class BaileysService {
 
     const env = getEnv();
     if (env.whatsapp.disabled) {
-      logger.info('WhatsApp integration is disabled - skipping initialization');
+      logger.info('🔕 WhatsApp integration is disabled - skipping initialization');
       return;
     }
 
     this.isConnecting = true;
-    logger.info('📱 Initializing Baileys WhatsApp client...');
+    this.connectionState = 'connecting';
+    logger.info('📱 WhatsApp connecting - Starting Baileys connection manager...');
+    logger.info('🔧 Connection parameters: session persistence enabled, QR API ready');
     
     try {
       await this.initializeConnection();
     } catch (error) {
-      logger.error('Failed to initialize Baileys client', { error: error.message });
+      logger.error('❌ WhatsApp connection failed', { error: error.message, errorStack: error.stack });
       this.isConnecting = false;
-      this.scheduleRetry();
+      this.connectionState = 'disconnected';
+      this.scheduleReconnect();
     }
   }
 
   async initializeConnection() {
     const config = getWhatsAppConfig();
     
-    // Ensure auth directory exists
-    if (!fs.existsSync(config.sessionPath)) {
-      fs.mkdirSync(config.sessionPath, { recursive: true });
+    // Use sessions folder from environment configuration
+    const sessionPath = config.sessionPath;
+    
+    // Ensure sessions directory exists
+    if (!fs.existsSync(sessionPath)) {
+      fs.mkdirSync(sessionPath, { recursive: true });
+      logger.info(`Created sessions directory for session persistence: ${sessionPath}`);
     }
 
     // Only create authState if it doesn't exist (preserve existing sessions)
     if (!this.authState) {
-      this.authState = await useMultiFileAuthState(config.sessionPath);
-      logger.info('Created new auth state');
+      this.authState = await useMultiFileAuthState(sessionPath);
+      logger.info('Created new auth state for session persistence');
     } else {
       logger.info('Reusing existing auth state');
     }
     
     // Check if we have a valid session (don't reset QR flag if session exists)
-    const sessionFiles = fs.readdirSync(config.sessionPath).filter(file => file.startsWith('session-'));
+    const sessionFiles = fs.readdirSync(sessionPath).filter(file => file.startsWith('session-'));
     const hasSession = sessionFiles.length > 0;
     if (!hasSession) {
       this.qrEmitted = false; // Only reset QR if no session exists
@@ -109,7 +135,7 @@ class BaileysService {
     this.sock = makeWASocket({
       version, // ALWAYS include the latest version
       auth: this.authState.state,
-      printQRInTerminal: false, // We handle QR ourselves
+      printQRInTerminal: true, // ENABLE terminal QR printing - show in both console and frontend
       // Use silent logger to prevent crashes while suppressing all logs
       logger: silentBaileysLogger,
       // Custom browser-like mobile config
@@ -141,19 +167,30 @@ class BaileysService {
     this.sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
       
-      // Handle QR code (only emit once per session)
+      // Handle QR code (only emit once per session and store for API)
       if (qr && !this.qrEmitted) {
         this.qrEmitted = true;
+        this.qrCode = qr; // Store QR for API access
         this.isPairing = true;
-        logger.info('📱 QR Code received - scan it with your WhatsApp app!');
-        logger.info('🔍 QR Code (scan with WhatsApp):');
+        this.connectionState = 'qr_required';
+        logger.info('📱 QR Code generated and stored for API access');
+        logger.info('🔍 QR Code available via /api/whatsapp-qr endpoint AND console');
+        logger.info('📱 Scan QR in console or use frontend at /settings');
+        
+        // Emit QR code via WebSocket for real-time frontend updates
+        if (global.io) {
+          global.io.emit('whatsapp:qr', { qr });
+          global.io.emit('whatsapp:status', { connected: false, qrRequired: true });
+          logger.info('📡 QR code emitted via WebSocket');
+        }
+        
+        // Print QR code to console manually since printQRInTerminal is deprecated
         console.log('\n' + '='.repeat(50));
         console.log('📱 WHATSAPP QR CODE - SCAN WITH YOUR PHONE');
         console.log('='.repeat(50));
         qrcode.generate(qr, { small: true });
         console.log('='.repeat(50));
-        console.log('📱 Open WhatsApp > Linked Devices > Link a Device');
-        console.log('🔍 Point camera at the QR code above');
+        console.log('📱 Or scan using frontend: http://localhost:5176/settings');
         console.log('='.repeat(50) + '\n');
       }
 
@@ -221,8 +258,24 @@ class BaileysService {
   handleConnectionOpen() {
     this.isConnected = true;
     this.isConnecting = false;
+    this.connectionState = 'connected';
+    this.lastConnected = new Date().toISOString();
     this.retryCount = 0; // Reset retry count on successful connection
     this.qrEmitted = false; // Reset QR flag for next session
+    this.qrCode = null; // Clear QR when connected
+    this.lastDisconnectReason = null; // Clear disconnect reason
+    
+    logger.info('✅ WhatsApp connected - Connection established successfully');
+    logger.info('🎉 WhatsApp connection is OPEN and ready!');
+    logger.info('📱 WhatsApp bot is now ready to listen for messages!');
+    logger.info('🔥 Send a WhatsApp message to test the pipeline...');
+    logger.info('📊 Connection metrics: timestamp=' + this.lastConnected + ', state=' + this.connectionState);
+    
+    // Emit connection status via WebSocket for real-time frontend updates
+    if (global.io) {
+      global.io.emit('whatsapp:status', { connected: true, qrRequired: false });
+      logger.info('📡 Connection status emitted via WebSocket');
+    }
     
     // Setup read receipt tracking
     this.setupReadReceiptTracking();
@@ -257,54 +310,81 @@ class BaileysService {
   async handleConnectionClose(lastDisconnect) {
     this.isConnected = false;
     this.isConnecting = false;
+    this.connectionState = 'disconnected';
 
     const statusCode = lastDisconnect?.error?.output?.statusCode;
-    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+    this.lastDisconnectReason = statusCode;
 
-    logger.warn('WhatsApp connection closed', { statusCode, shouldReconnect });
+    logger.warn('⚠️ WhatsApp disconnected', { 
+      statusCode, 
+      shouldReconnect: statusCode !== DisconnectReason.loggedOut,
+      lastDisconnectReason: statusCode,
+      connectionState: this.connectionState
+    });
+
+    // Emit disconnection status via WebSocket for real-time frontend updates
+    if (global.io) {
+      global.io.emit('whatsapp:disconnected');
+      global.io.emit('whatsapp:status', { connected: false, qrRequired: false });
+      logger.info('📡 Disconnection status emitted via WebSocket');
+    }
 
     if (statusCode === DisconnectReason.loggedOut) {
-      logger.error('Logged out from WhatsApp - clearing auth state');
+      logger.error('🚫 Session expired - logged out from WhatsApp');
+      logger.info('🔄 Will clear auth state and require new QR scan');
+      
+      // Emit logout event via WebSocket
+      if (global.io) {
+        global.io.emit('whatsapp:logout');
+        logger.info('📡 Logout event emitted via WebSocket');
+      }
+      
       await this.handlePermanentFailure();
       return;
     }
 
-    if (shouldReconnect) {
-      // 515 = Restart Required. This happens immediately after QR scan.
-      // Reconnect immediately to catch the session before it expires.
-      if (statusCode === 515 || statusCode === DisconnectReason.restartRequired) {
-        logger.info('✅ QR/Pairing accepted. Restarting connection immediately...');
-        await this.destroyConnection();
-        return this.initialize(); // No setTimeout, no delay. Call it NOW.
-      }
-      
-      // For other errors, use a small delay
-      logger.info('🔄 Reconnecting in 2000ms...');
-      await this.destroyConnection();
-      
-      setTimeout(async () => {
-        await this.initialize();
-      }, 2000);
+    // For all other errors (including 408), reconnect automatically
+    if (statusCode === 408) {
+      logger.warn('⏱️ 408 Timeout detected - WebSocket connection timed out');
+      logger.info('🔄 This is a temporary issue, will reconnect automatically');
+    } else {
+      logger.info('🔄 Temporary disconnect detected - scheduling automatic reconnect');
     }
+    this.scheduleReconnect();
   }
 
   async handlePermanentFailure() {
-    // Clear auth state for fresh authentication
+    // Clear sessions state for fresh authentication
     const config = getWhatsAppConfig();
+    const sessionPath = config.sessionPath;
     try {
-      fs.rmSync(config.sessionPath, { recursive: true, force: true });
-      logger.info('Cleared corrupted auth state');
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      logger.info(`Cleared corrupted session state from ${sessionPath} directory`);
     } catch (error) {
-      logger.warn('Could not clear auth state', { error: error.message });
+      logger.warn('Could not clear session state', { error: error.message });
     }
 
     // Reset state
     this.authState = null;
     this.qrEmitted = false;
+    this.qrCode = null;
     this.isPairing = false;
+    this.connectionState = 'disconnected';
     
-    // Schedule retry for fresh authentication
-    this.scheduleRetry();
+    // Emit QR requirement via WebSocket for immediate modal display
+    if (global.io) {
+      global.io.emit('whatsapp:status', { connected: false, qrRequired: true });
+      logger.info('📡 QR requirement emitted via WebSocket after permanent failure');
+    }
+    
+    // Generate QR immediately without waiting for retry
+    logger.info('🔄 Generating QR immediately after session expiration...');
+    setImmediate(() => {
+      this.startBaileys();
+    });
+    
+    // Also schedule retry as backup
+    this.scheduleRetry(true);
   }
 
   async handleMessage(messageData) {
@@ -429,7 +509,29 @@ class BaileysService {
     }
   }
 
-  scheduleRetry() {
+  // Schedule reconnect with safety delay
+  scheduleReconnect() {
+    if (this.isConnecting || this.reconnectTimer) {
+      logger.debug('🔄 Reconnect already scheduled or in progress');
+      return;
+    }
+
+    // Small delay to prevent rapid reconnect loops
+    const delay = 2000; // 2 seconds
+    logger.info(`🔄 Scheduling reconnect in ${delay}ms...`);
+    logger.info('⏱️ Safety delay: preventing rapid reconnect loops');
+    
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      logger.info('🔄 Attempting automatic reconnect...');
+      logger.info('🔧 Destroying existing connection before reconnect');
+      await this.destroyConnection();
+      await this.startBaileys();
+    }, delay);
+  }
+
+  // Legacy retry method for compatibility
+  async scheduleRetry(isSessionExpired = false) {
     if (this.isConnecting) {
       logger.warn('Connection already in progress, skipping retry');
       return;
@@ -441,26 +543,29 @@ class BaileysService {
     }
 
     this.retryCount++;
-    const delay = Math.min(120000 * Math.pow(2, this.retryCount - 1), 600000); // Exponential backoff, start 2min, max 10min
+    
+    // Use much shorter delay for session expiration (5 seconds instead of 120 seconds)
+    const delay = isSessionExpired ? 5000 : Math.min(120000 * Math.pow(2, this.retryCount - 1), 600000);
+    
     logger.info(`Scheduling retry (${this.retryCount}/${this.maxRetries}) in ${delay/1000}s...`);
     
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       logger.info('Retrying WhatsApp connection...');
-      await this.initialize();
+      await this.startBaileys();
     }, delay);
   }
 
   async destroyConnection() {
     if (this.sock) {
       try {
-        logger.info('Destroying WhatsApp connection...');
+        logger.info('🔧 Destroying WhatsApp connection...');
         this.sock.ev.removeAllListeners();
         this.sock.ws.close();
         this.sock = null;
-        logger.info('WhatsApp connection destroyed successfully');
+        logger.info('✅ WhatsApp connection destroyed successfully');
       } catch (error) {
-        logger.error('Error destroying WhatsApp connection', { error: error.message });
+        logger.error('❌ Error destroying WhatsApp connection', { error: error.message });
       }
     }
     
@@ -468,6 +573,13 @@ class BaileysService {
     this.isConnected = false;
     this.isConnecting = false;
     this.isPairing = false;
+    this.connectionState = 'disconnected';
+    
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     
     // Clear retry timer
     if (this.retryTimer) {
@@ -626,12 +738,16 @@ class BaileysService {
   }
 
   async shutdown() {
-    logger.info('Shutting down Baileys service...');
+    logger.info('🛑 Shutting down Baileys service...');
     
     // Clear retry timer
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
 
     // Close connection
@@ -641,13 +757,13 @@ class BaileysService {
     if (this.authState) {
       try {
         await this.authState.saveCreds();
-        logger.info('Auth state saved');
+        logger.info('💾 Auth state saved successfully');
       } catch (error) {
-        logger.warn('Could not save auth state', { error: error.message });
+        logger.warn('⚠️ Could not save auth state', { error: error.message });
       }
     }
 
-    logger.info('Baileys service shut down successfully');
+    logger.info('✅ Baileys service shut down successfully');
   }
 
   getClient() {

@@ -21,7 +21,8 @@ const start = async () => {
     // Initialize WhatsApp client only if enabled
     if (!env.whatsapp.disabled) {
       logger.info('Initializing WhatsApp client...');
-      await baileysService.initialize();
+      // Note: baileysService auto-starts in constructor, so we don't need to call initialize here
+      logger.info('WhatsApp client auto-initialization complete');
     } else {
       logger.info('WhatsApp integration is disabled - skipping client initialization');
     }

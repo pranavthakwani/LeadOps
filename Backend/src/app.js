@@ -22,7 +22,9 @@ export const createApp = () => {
   // CORS configuration - allow multiple production URLs
   const allowedOrigins = [
     'http://localhost:5173',
-    'http://localhost:3000',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
     'http://182.16.16.189:5100',
     'http://182.16.16.202:5100',
     process.env.FRONTEND_URL || 'http://localhost:5173'
@@ -585,9 +587,26 @@ export const createApp = () => {
   app.get('/api/whatsapp-status', (req, res) => {
     res.json({
       connected: baileysService.isConnected || false,
+      qrRequired: !baileysService.isConnected && baileysService.qrCode !== null,
       lastConnected: baileysService.lastConnected || null,
-      qrRequired: !baileysService.isConnected && baileysService.qrCode !== null
+      connectionState: baileysService.connectionState || 'disconnected',
+      lastDisconnectReason: baileysService.lastDisconnectReason || null
     });
+  });
+
+  // WhatsApp QR code endpoint
+  app.get('/api/whatsapp-qr', (req, res) => {
+    if (baileysService.qrCode) {
+      res.json({
+        success: true,
+        qr: baileysService.qrCode
+      });
+    } else {
+      res.json({
+        success: false,
+        qr: null
+      });
+    }
   });
 
   // Reply endpoint for WhatsApp messages

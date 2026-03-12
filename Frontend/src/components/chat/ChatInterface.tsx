@@ -628,12 +628,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {/* Inject WhatsApp-style highlight CSS */}
       <style>{highlightStyles}</style>
       
-      <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a]">
+      <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a] w-full overflow-hidden">
         {/* Chat Header - Frosted translucent with rounded corners */}
-        <div className="sticky top-0 z-20 mx-4 mt-3 mb-2">
+        <div className="sticky top-0 z-20 mx-4 mt-3 mb-2 flex-shrink-0">
           <div className="backdrop-blur-xl bg-[#075e54]/85 dark:bg-[#0b141a]/85 px-4 py-3 flex items-center justify-between rounded-2xl shadow-lg shadow-black/20 border border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center shadow-md">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center shadow-md flex-shrink-0">
                 {conversationData?.display_name ? (
                   <span className="text-white font-semibold text-sm">
                     {conversationData.display_name.charAt(0).toUpperCase()}
@@ -642,23 +642,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <User className="w-6 h-6 text-white" />
                 )}
               </div>
-              <div>
-                <h2 className="font-semibold text-white drop-shadow-sm">
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-white drop-shadow-sm truncate">
                   {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
                 </h2>
-                <p className="text-xs text-[#dcf8c6]/90">
+                <p className="text-xs text-[#dcf8c6]/90 truncate">
                   {conversationData?.phone_number || conversationData?.jid || 'No number'}
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {/* Save Contact Button */}
               {conversationData && !conversationData.contact_id && (
                 <button
                   onClick={handleSaveContactClick}
                   disabled={isSavingContact}
-                  className="bg-[#128c7e] hover:bg-[#0d6d5f] text-white px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-50 shadow-md"
+                  className="bg-[#128c7e] hover:bg-[#0d6d5f] text-white px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-50 shadow-md flex-shrink-0"
                 >
                   {isSavingContact ? 'Saving...' : 'Save Contact'}
                 </button>
@@ -690,7 +690,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
 
         {/* Messages Area - WhatsApp Style */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1" ref={messagesContainerRef}>
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 min-h-0 relative">
           {isLoading ? (
             <div className="flex-1 h-full">
               <Loader type="chat" />
@@ -699,7 +699,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="flex justify-center items-center h-full">
               <div className="text-gray-500 dark:text-gray-400 text-center">
                 <div className="mb-2">No messages yet</div>
-                <div className="text-sm">Start the conversation!</div>
+                <div className="text-sm">Start conversation!</div>
               </div>
             </div>
           ) : (
@@ -728,7 +728,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     }}
                     className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-0.5' : 'mt-1'} group`}
                   >
-                    <div className={`relative max-w-[65%] px-2 py-1.5 rounded-lg text-sm hover:shadow-md transition-shadow duration-200 ${
+                    <div className={`relative max-w-[70%] px-2 py-1.5 rounded-lg text-sm hover:shadow-md transition-shadow duration-200 ${
                       chatMessage.isOutgoing 
                         ? 'bg-[#d9fdd3] text-black dark:bg-[#005c4b] dark:text-white' 
                         : 'bg-white text-black dark:bg-[#202c33] dark:text-white'
@@ -806,11 +806,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         {/* Input Area - WhatsApp Style */}
         {canReply() && (
-          <div className="bg-white dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942]">
+          <div className="bg-white dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] flex-shrink-0">
             {/* Quoted Message Preview */}
             {quotedMessage && (
               <div className="bg-white dark:bg-[#202c33] px-4 py-2 border-l-4 border-[#00a884] flex justify-between items-start">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-[#00a884] mb-1">
                     Replying to {quotedMessage.sender}
                     <button
@@ -842,7 +842,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <button
                 onClick={handleSendReply}
                 disabled={!replyText.trim() || isReplying}
-                className="bg-[#00a884] hover:bg-[#008069] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-full p-2 transition-colors disabled:cursor-not-allowed"
+                className="bg-[#00a884] hover:bg-[#008069] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-full p-2 transition-colors disabled:cursor-not-allowed flex-shrink-0"
               >
                 <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
                   <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>

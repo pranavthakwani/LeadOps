@@ -66,7 +66,7 @@ export const Dashboard: React.FC = () => {
       value: stats?.leadsToday || 0,
       icon: TrendingUp,
       color: 'text-[var(--accent-primary)]',
-      gradient: 'from-[var(--accent-primary)]/10 to-transparent',
+      gradient: 'from-[rgba(0,168,132,0.20)] to-transparent',
       onClick: () => navigate('/inbox?tab=lead'),
     },
     {
@@ -74,7 +74,7 @@ export const Dashboard: React.FC = () => {
       value: stats?.offeringsToday || 0,
       icon: TrendingDown,
       color: 'text-blue-500',
-      gradient: 'from-blue-500/10 to-transparent',
+      gradient: 'from-blue-500/20 to-transparent',
       onClick: () => navigate('/inbox?tab=offering'),
     },
     {
@@ -82,7 +82,7 @@ export const Dashboard: React.FC = () => {
       value: stats?.ignoredToday || 0,
       icon: X,
       color: 'text-[var(--text-tertiary)]',
-      gradient: 'from-gray-500/10 to-transparent',
+      gradient: 'from-gray-500/20 to-transparent',
       onClick: () => navigate('/inbox?tab=ignored'),
     },
   ];

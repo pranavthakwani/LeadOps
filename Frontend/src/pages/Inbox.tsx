@@ -138,8 +138,16 @@ export const Inbox: React.FC = () => {
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
                 activeTab === tab
-                  ? 'bg-white dark:bg-[#151821] text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  ? tab === 'leads' 
+                    ? 'bg-white dark:bg-[#151821] text-[var(--accent-primary)] shadow-sm'
+                    : tab === 'offerings'
+                    ? 'bg-white dark:bg-[#151821] text-blue-500 shadow-sm'
+                    : 'bg-white dark:bg-[#151821] text-[var(--text-tertiary)] shadow-sm'
+                  : tab === 'leads'
+                  ? 'text-gray-500 dark:text-gray-400 hover:text-[var(--accent-primary)] hover:bg-[rgba(0,168,132,0.08)]'
+                  : tab === 'offerings'
+                  ? 'text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:bg-[rgba(59,130,246,0.08)]'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-[var(--text-tertiary)] hover:bg-[rgba(107,114,128,0.08)]'
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}

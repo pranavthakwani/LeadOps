@@ -13,7 +13,7 @@ const navItems = [
 
 export const Sidebar: React.FC = memo(() => {
   const { theme, toggleTheme } = useTheme();
-  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [sidebarWidth, setSidebarWidth] = useState(180);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -28,7 +28,7 @@ export const Sidebar: React.FC = memo(() => {
       
       const newWidth = e.clientX;
       const maxWidth = window.innerWidth / 2;
-      const minWidth = 220;
+      const minWidth = 180;
       
       if (newWidth >= minWidth && newWidth <= maxWidth) {
         setSidebarWidth(newWidth);

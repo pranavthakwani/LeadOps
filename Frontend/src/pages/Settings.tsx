@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { XCircle, Activity, Server, Clock, Code } from 'lucide-react';
 import { getHealth } from '../services/api';
 import { Loader } from '../components/common/Loader';
+import { useWhatsAppConnection } from '../context/WhatsAppConnectionContext';
 import type { HealthStatus } from '../types/message';
 
 export const Settings: React.FC = () => {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const { state: whatsappState } = useWhatsAppConnection();
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -116,6 +118,46 @@ export const Settings: React.FC = () => {
                   {health.backendVersion}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* WhatsApp Connection Card */}
+          <div className="bg-white/80 dark:bg-[#151821]/80 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-gray-200/50 dark:border-gray-700/50 animate-fade-in" style={{ animationDelay: '200ms' }}>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-5 flex items-center gap-2">
+              <div className="p-2 bg-[#128c7e]/10 rounded-xl backdrop-blur-sm">
+                <span className="text-[var(--text-tertiary)] text-xs">WA</span>
+              </div>
+              WhatsApp Connection
+            </h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                <div className="flex items-center gap-2">
+                  {whatsappState.connected ? (
+                    <>
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-green-600">Connected</span>
+                    </>
+                  ) : whatsappState.qrRequired ? (
+                    <>
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-medium text-yellow-600">QR Required</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-red-600">Disconnected</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              {whatsappState.qrRequired && (
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    WhatsApp authentication is required. A QR code modal will appear automatically.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

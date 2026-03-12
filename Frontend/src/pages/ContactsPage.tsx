@@ -125,7 +125,6 @@ export const ContactsPage: React.FC = () => {
     contact.phone_number.includes(searchQuery)
   );
 
-
   const handleContactClick = async (contact: MergedContact) => {
     setSelectedContact(contact);
     
@@ -184,7 +183,7 @@ export const ContactsPage: React.FC = () => {
   return (
     <div className="flex h-full bg-gray-50 dark:bg-gray-900">
       {/* Left Panel - Contacts List */}
-      <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+      <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
         <div>
           {/* Header */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -207,7 +206,7 @@ export const ContactsPage: React.FC = () => {
         </div>
 
         {/* Contacts List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {loading ? (
             <div className="p-4">
               <Loader type="contacts" />
@@ -280,8 +279,8 @@ export const ContactsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Panel - Chat Interface */}
-      <div className="flex-1 flex flex-col">
+      {/* Right Panel - Chat Interface - Takes remaining width but with max constraint */}
+      <div className="flex-1 flex flex-col max-w-[calc(100vw-24rem)] min-w-0">
         {selectedContact ? (
           <ChatInterface 
             conversationId={selectedContact.conversation_id || undefined}
@@ -297,16 +296,6 @@ export const ContactsPage: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Edit Contact Modal */}
-      {editingContact && (
-        <EditContactModal
-          isOpen={true}
-          onClose={handleCloseEditModal}
-          contact={editingContact}
-          onUpdate={handleContactUpdate}
-        />
-      )}
     </div>
   );
 };
