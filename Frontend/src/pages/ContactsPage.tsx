@@ -175,11 +175,7 @@ export const ContactsPage: React.FC = () => {
     setEditingContact(null);
   };
 
-  const handleContactUpdate = () => {
-    loadContacts(); // Reload contacts to show updated data
-    setEditingContact(null);
-  };
-
+  
   return (
     <div className="flex h-full bg-gray-50 dark:bg-gray-900">
       {/* Left Panel - Contacts List */}
@@ -296,6 +292,16 @@ export const ContactsPage: React.FC = () => {
           </div>
         )}
       </div>
+      
+      {/* Edit Contact Modal */}
+      {editingContact && (
+        <EditContactModal
+          isOpen={!!editingContact}
+          onClose={handleCloseEditModal}
+          contact={editingContact}
+          onUpdate={loadContacts}
+        />
+      )}
     </div>
   );
 };

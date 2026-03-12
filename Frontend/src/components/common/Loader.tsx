@@ -11,14 +11,12 @@ import {
 } from './Skeleton';
 
 interface LoaderProps {
-  size?: 'sm' | 'md' | 'lg';
   text?: string;
   type?: 'spinner' | 'search' | 'message' | 'dashboard' | 'contacts' | 'settings' | 'inbox' | 'chat';
   count?: number;
 }
 
 export const Loader: React.FC<LoaderProps> = ({ 
-  size = 'md', 
   text, 
   type = 'spinner',
   count = 1
