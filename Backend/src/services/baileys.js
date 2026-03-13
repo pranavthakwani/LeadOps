@@ -244,16 +244,18 @@ class BaileysService {
           });
         }
 
-        // ONLY store incoming messages (NOT from me)
-        // Outgoing messages are stored via handleOutgoingMessage
+        // Store ALL messages (both incoming and outgoing) for complete chat history
         if (!message.key.fromMe) {
           logger.info('Storing incoming message', { messageId: message.key.id });
           await chatService.storeMessage(message);
           await chatService.handleIncomingMessage(message);
         } else {
-          logger.info('Skipping outgoing message (handled by handleOutgoingMessage)', { 
-            messageId: message.key.id 
+          logger.info('Storing outgoing message from phone/device', { 
+            messageId: message.key.id,
+            fromMe: message.key.fromMe
           });
+          await chatService.storeMessage(message);
+          // Don't process through pipeline for outgoing messages, just store them
         }
       }
     });
