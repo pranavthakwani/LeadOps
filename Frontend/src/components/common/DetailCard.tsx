@@ -38,7 +38,8 @@ const getBrandLogo = (brand: string | undefined) => {
     'narzo': '/assets/brands/narzo.png',
     'meta':'/assets/brands/meta.png',
     'aiplus': '/assets/brands/Aiplus.png',
-    'ai+': '/assets/brands/Aiplus.png'
+    'ai+': '/assets/brands/Aiplus.png',
+    'nothing': '/assets/brands/nothing.png'
   };
   
   return brandMap[brandLower] || null;
