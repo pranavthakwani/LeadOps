@@ -108,23 +108,28 @@ class BaileysService {
       logger.info(`Created sessions directory for session persistence: ${sessionPath}`);
     }
 
-    // Only create authState if it doesn't exist (preserve existing sessions)
-    if (!this.authState) {
-      this.authState = await useMultiFileAuthState(sessionPath);
-      logger.info('Created new auth state for session persistence');
-    } else {
-      logger.info('Reusing existing auth state');
-    }
+    // Always reload auth state for fresh connections
+    this.authState = await useMultiFileAuthState(sessionPath);
+    logger.info('Reloaded auth state for fresh connection');
     
-    // Check if we have a valid session (don't reset QR flag if session exists)
-    const sessionFiles = fs.readdirSync(sessionPath).filter(file => file.startsWith('session-'));
-    const hasSession = sessionFiles.length > 0;
+    // Check session directory size and warn if bloated
+    try {
+      const sessionFiles = fs.readdirSync(sessionPath);
+      if (sessionFiles.length > 100) {
+        logger.warn(`Session store appears bloated with ${sessionFiles.length} files - consider cleanup`);
+      }
+    } catch (error) {
+      logger.debug('Could not check session directory size', { error: error.message });
+    }
+
+    // Correct session detection for modern Baileys
+    const hasSession = fs.existsSync(path.join(sessionPath, 'creds.json'));
     if (!hasSession) {
-      this.qrEmitted = false; // Only reset QR if no session exists
-      logger.info('No existing session found - QR will be generated');
+      this.qrEmitted = false;
+      logger.info('No existing session found (creds.json missing) - QR will be generated');
     } else {
-      this.qrEmitted = true; // Prevent QR if session exists
-      logger.info(`Existing session found (${sessionFiles.length} files) - QR will be skipped`);
+      this.qrEmitted = true;
+      logger.info('Existing session found (creds.json exists) - QR will be skipped');
     }
 
     // Fetch latest WhatsApp Web version
@@ -135,18 +140,17 @@ class BaileysService {
     this.sock = makeWASocket({
       version, // ALWAYS include the latest version
       auth: this.authState.state,
-      printQRInTerminal: true, // ENABLE terminal QR printing - show in both console and frontend
+      // Removed deprecated printQRInTerminal option - QR handled manually
       // Use silent logger to prevent crashes while suppressing all logs
       logger: silentBaileysLogger,
-      // Custom browser-like mobile config
-      browser: ["LeadOps", "Chrome", "1.0.0"],
+      // Removed custom browser header - use Baileys default for better compatibility
       // Connection timeout
-      connectTimeoutMs: 120000, // Increased from 60s to 120s
+      connectTimeoutMs: 200000, // Increased for better stability
       // Query timeout
-      queryTimeoutMs: 120000, // Increased from 60s to 120s
+      queryTimeoutMs: 200000, // Increased for better stability
       // Retry configuration
-      retryRequestDelayMs: 500,
-      maxMsgRetryCount: 2,
+      retryRequestDelayMs: 1000,
+      maxMsgRetryCount: 3,
     });
 
     this.setupEventHandlers();
@@ -264,6 +268,7 @@ class BaileysService {
     this.qrEmitted = false; // Reset QR flag for next session
     this.qrCode = null; // Clear QR when connected
     this.lastDisconnectReason = null; // Clear disconnect reason
+    this.isPairing = false; // Clear pairing flag
     
     logger.info('✅ WhatsApp connected - Connection established successfully');
     logger.info('🎉 WhatsApp connection is OPEN and ready!');
@@ -280,11 +285,7 @@ class BaileysService {
     // Setup read receipt tracking
     this.setupReadReceiptTracking();
     
-    logger.info('✅ WhatsApp connection established and read receipt tracking enabled'); // Clear pairing flag
-    
-    logger.info('🎉 WhatsApp connection is OPEN and ready!');
-    logger.info('📱 WhatsApp bot is now ready to listen for messages!');
-    logger.info('🔥 Send a WhatsApp message to test the pipeline...');
+    logger.info('✅ WhatsApp connection established and read receipt tracking enabled');
     
     // Immediately save credentials to ensure session persistence
     if (this.authState) {
@@ -319,7 +320,8 @@ class BaileysService {
       statusCode, 
       shouldReconnect: statusCode !== DisconnectReason.loggedOut,
       lastDisconnectReason: statusCode,
-      connectionState: this.connectionState
+      connectionState: this.connectionState,
+      retryCount: this.retryCount
     });
 
     // Emit disconnection status via WebSocket for real-time frontend updates
@@ -347,10 +349,59 @@ class BaileysService {
     if (statusCode === 408) {
       logger.warn('⏱️ 408 Timeout detected - WebSocket connection timed out');
       logger.info('🔄 This is a temporary issue, will reconnect automatically');
+      
+      // Only clear session after 8 consecutive 408 failures (more tolerant)
+      if (this.retryCount >= 8) {
+        logger.warn('🧹 8 consecutive 408 timeouts detected - clearing potentially corrupted session');
+        await this.clearSessionState();
+      }
     } else {
       logger.info('🔄 Temporary disconnect detected - scheduling automatic reconnect');
     }
     this.scheduleReconnect();
+  }
+
+  async clearSessionState() {
+    const config = getWhatsAppConfig();
+    const sessionPath = config.sessionPath;
+    
+    try {
+      // Clear session files
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      logger.info(`🧹 Cleared corrupted session state from ${sessionPath} directory`);
+      
+      // Reset auth state (but keep retryCount to preserve threshold logic)
+      this.authState = null;
+      this.qrEmitted = false;
+      this.qrCode = null;
+      this.isPairing = false;
+      // Note: retryCount is NOT reset here - it resets only on successful connection
+      this.connectionState = 'disconnected';
+      this.isConnected = false;
+      this.isConnecting = false;
+      
+      // Recreate sessions directory
+      if (!fs.existsSync(sessionPath)) {
+        fs.mkdirSync(sessionPath, { recursive: true });
+      }
+      
+      logger.info('🔄 Session state cleared - ready for fresh QR authentication');
+      
+      // Emit QR requirement via WebSocket
+      if (global.io) {
+        global.io.emit('whatsapp:status', { connected: false, qrRequired: true });
+        global.io.emit('whatsapp:logout');
+        logger.info('📡 QR requirement emitted via WebSocket after session clear');
+      }
+      
+      // Restart Baileys immediately after clearing session
+      setImmediate(() => {
+        logger.info('🔄 Restarting Baileys after session clear...');
+        this.startBaileys();
+      });
+    } catch (error) {
+      logger.error('❌ Failed to clear session state', { error: error.message });
+    }
   }
 
   async handlePermanentFailure() {
@@ -509,21 +560,25 @@ class BaileysService {
     }
   }
 
-  // Schedule reconnect with safety delay
+  // Schedule reconnect with safety delay and progressive backoff
   scheduleReconnect() {
     if (this.isConnecting || this.reconnectTimer) {
       logger.debug('🔄 Reconnect already scheduled or in progress');
       return;
     }
 
-    // Small delay to prevent rapid reconnect loops
-    const delay = 2000; // 2 seconds
-    logger.info(`🔄 Scheduling reconnect in ${delay}ms...`);
-    logger.info('⏱️ Safety delay: preventing rapid reconnect loops');
+    // Exponential backoff for better stability under network issues
+    const baseDelay = 12000; // Start with 12 seconds
+    const maxDelay = 60000; // Max 60 seconds
+    const delay = Math.min(baseDelay * Math.pow(2, this.retryCount), maxDelay);
+    
+    logger.info(`🔄 Scheduling reconnect in ${delay}ms... (attempt ${this.retryCount || 1})`);
+    logger.info('⏱️ Using progressive backoff to prevent rapid reconnect loops');
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
-      logger.info('🔄 Attempting automatic reconnect...');
+      this.retryCount = (this.retryCount || 0) + 1;
+      logger.info(`🔄 Attempting automatic reconnect... (attempt ${this.retryCount})`);
       logger.info('🔧 Destroying existing connection before reconnect');
       await this.destroyConnection();
       await this.startBaileys();
@@ -560,12 +615,14 @@ class BaileysService {
     if (this.sock) {
       try {
         logger.info('🔧 Destroying WhatsApp connection...');
-        this.sock.ev.removeAllListeners();
-        this.sock.ws.close();
+        // Use proper Baileys termination instead of just closing websocket
+        this.sock.end();
         this.sock = null;
         logger.info('✅ WhatsApp connection destroyed successfully');
       } catch (error) {
         logger.error('❌ Error destroying WhatsApp connection', { error: error.message });
+        // Ensure socket is null even if end() fails
+        this.sock = null;
       }
     }
     

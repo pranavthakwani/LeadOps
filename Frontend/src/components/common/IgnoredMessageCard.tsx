@@ -1,14 +1,36 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Message } from '../../types/message';
 import { formatISTDateTime } from '../../utils/timeUtils';
 
 interface IgnoredMessageCardProps {
   message: Message;
+  disableClick?: boolean;
 }
 
-export const IgnoredMessageCard: React.FC<IgnoredMessageCardProps> = ({ message }) => {
+export const IgnoredMessageCard: React.FC<IgnoredMessageCardProps> = ({ message, disableClick = false }) => {
+  const navigate = useNavigate();
+  
+  const handleClick = () => {
+    if (disableClick) return; // Don't navigate if disabled
+    
+    navigate(`/message/${message.id}`, {
+      state: {
+        from: 'inbox',
+        tab: 'ignored',
+        messageType: 'ignored'
+      }
+    });
+  };
   return (
-    <div className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+    <div 
+      onClick={disableClick ? undefined : handleClick}
+      className={`bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4 ${
+        disableClick 
+          ? '' 
+          : 'hover:shadow-lg hover:border-gray-300 dark:hover:border-gray-700 transition-all cursor-pointer group relative'
+      }`}
+    >
       {/* Header with sender info and timestamp */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
@@ -52,6 +74,11 @@ export const IgnoredMessageCard: React.FC<IgnoredMessageCardProps> = ({ message 
           )}
         </div>
       </div>
+
+      {/* Hover border glow - only when clickable */}
+      {!disableClick && (
+        <div className="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none glow-soft" />
+      )}
     </div>
   );
 };

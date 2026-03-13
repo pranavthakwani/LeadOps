@@ -36,7 +36,9 @@ const getBrandLogo = (brand: string | undefined) => {
     'micromax': '/assets/brands/Micromax.jpg',
     'google': '/assets/brands/google.png',
     'narzo': '/assets/brands/narzo.png',
-    'meta':'/assets/brands/meta.png'
+    'meta':'/assets/brands/meta.png',
+    'aiplus': '/assets/brands/Aiplus.png',
+    'ai+': '/assets/brands/Aiplus.png'
   };
   
   return brandMap[brandLower] || null;
@@ -121,7 +123,7 @@ export const OfferingCard: React.FC<OfferingCardProps> = ({ message, onClick }) 
               <span>Color: {colorDisplay.name}</span>
             )}
             {message.parsedData?.gst && (
-              <span>GST: {message.parsedData.gst}</span>
+              <span>GST: Yes</span>
             )}
           </div>
         </div>

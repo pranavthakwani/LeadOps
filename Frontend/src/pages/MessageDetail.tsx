@@ -5,6 +5,7 @@ import { getMessageByIdNew, getLeadById, getOfferingById, getIgnoredById } from 
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
+import { IgnoredMessageCard } from '../components/common/IgnoredMessageCard';
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { Loader } from '../components/common/Loader';
 import type { Message } from '../types/message';
@@ -208,8 +209,14 @@ export const MessageDetail: React.FC = () => {
             <div className="space-y-3">
               {/* Message Details */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
-                <OfferingCard message={message} />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                  {messageType === 'ignored' ? 'Message Details' : 'Product Details'}
+                </h3>
+                {messageType === 'ignored' ? (
+                  <IgnoredMessageCard message={message} disableClick={true} />
+                ) : (
+                  <OfferingCard message={message} />
+                )}
               </div>
             </div>
           </div>
