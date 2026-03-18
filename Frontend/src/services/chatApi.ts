@@ -26,6 +26,21 @@ export interface Conversation {
   contact_id?: number;
   display_name?: string;
   phone_number?: string;
+  profile_pic_url?: string;
+}
+
+export interface Contact {
+  id: number;
+  display_name: string;
+  phone_number: string;
+  is_auto_generated?: boolean;
+  profile_pic_url?: string;
+  conversation_id: number | null;
+  last_message_at: string | null;
+  unread_count: number;
+  all_conversation_ids?: number[];
+  last_message_text?: string;
+  last_message_from_me?: boolean;
 }
 
 export const chatApi = {
@@ -162,13 +177,50 @@ export const chatApi = {
   },
 
   // Get all contacts with conversation info
-  async getContacts() {
+  async getContacts(): Promise<Contact[]> {
     try {
       const response = await axios.get(`${API_BASE_URL}/contacts`);
       return response.data.data || [];
     } catch (error) {
       console.error('Error fetching contacts:', error);
       return [];
+    }
+  },
+
+  // Get contacts with conversations (paginated)
+  async getContactsPaginated(page: number = 1, limit: number = 30): Promise<{
+    contacts: Contact[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      hasMore: boolean;
+    };
+  }> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/contacts-with-conversations`, {
+        params: { page, limit }
+      });
+      return {
+        contacts: response.data.data || [],
+        pagination: response.data.pagination || {
+          page,
+          limit,
+          total: 0,
+          hasMore: false
+        }
+      };
+    } catch (error) {
+      console.error('Error fetching paginated contacts:', error);
+      return {
+        contacts: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          hasMore: false
+        }
+      };
     }
   },
 

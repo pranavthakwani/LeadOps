@@ -1,7 +1,10 @@
 import { chatRepository } from '../repositories/chatRepository.js';
 import { processPipeline } from '../pipeline/index.js';
-import { isBusinessMessage } from './business-filter.js';
+import { extractText } from '../utils/messageUtils.js';
 import { createLogger } from '../utils/logger.js';
+import { parseJid, extractPhoneFromJid } from '../utils/jidUtils.js';
+import { isBusinessMessage } from './business-filter.js';
+import { fetchProfilePicture, shouldFetchProfilePicture } from './profileService.js';
 
 const logger = createLogger('ChatService');
 
@@ -14,22 +17,6 @@ async function getQuotedMessageFromMe(quotedMessageId) {
     logger.error('Error getting quoted message from_me flag', { error: error.message, quotedMessageId });
     return null;
   }
-}
-
-// Extract actual text content from WhatsApp message
-function extractText(message) {
-  if (!message?.message) return null;
-
-  const msg = message.message;
-
-  return (
-    msg.conversation ||
-    msg.extendedTextMessage?.text ||
-    msg.imageMessage?.caption ||
-    msg.videoMessage?.caption ||
-    msg.documentMessage?.caption ||
-    null
-  );
 }
 
 export const chatService = {
@@ -286,6 +273,238 @@ export const chatService = {
     const conversationId = await chatRepository.getOrCreateConversation(jid);
 
     await chatRepository.linkContact(conversationId, contactId);
+
+    return conversationId;
+  },
+
+  // Handle outgoing messages with business filtering and pipeline processing
+  async handleOutgoingMessage(message) {
+    try {
+      const messageData = message;
+      const msg = messageData.message;
+      
+      if (!msg) {
+        logger.info('❌ No message in outgoing messageData');
+        return;
+      }
+
+      // Only process text messages
+      const messageType = Object.keys(msg)[0];
+      if (messageType !== 'conversation' && messageType !== 'extendedTextMessage') {
+        logger.info('📎 Ignored non-text outgoing message', { type: messageType });
+        return;
+      }
+
+      // Extract text content
+      const text = msg.conversation || msg.extendedTextMessage?.text || '';
+      if (!text?.trim()) {
+        logger.info('📝 Ignored empty outgoing message');
+        return;
+      }
+
+      // Business message filter for outgoing messages
+      if (!isBusinessMessage(text)) {
+        logger.info('Filtered non-business outgoing message', {
+          preview: text.substring(0, 50)
+        });
+        return;
+      }
+
+      // Build payload for AI pipeline (similar to incoming but marked as outgoing)
+      const payload = {
+        body: {
+          sender: messageData.key.remoteJid,
+          sender_name: messageData.pushName || 'You',
+          chat_id: messageData.key.remoteJid,
+          chat_type: 'individual',
+          timestamp: messageData.messageTimestamp,
+          raw_text: text,
+          wa_message_id: messageData.key.id || null,
+          from_me: true // Mark as outgoing
+        },
+        raw_text: text
+      };
+
+      logger.info('Outbound message received for processing', {
+        from: payload.body.sender,
+        chat_type: payload.body.chat_type,
+        preview: text.substring(0, 50)
+      });
+
+      // Process through pipeline (same as incoming messages)
+      await processPipeline(payload);
+
+    } catch (error) {
+      logger.error('❌ Error handling outgoing message', { 
+        error: error.message,
+        messageId: message.key.id 
+      });
+    }
+  },
+
+  // Store message with automatic contact creation and pushName handling
+  async storeMessageWithContact(message) {
+    const jid = message.key.remoteJid;
+    const waMessageId = message.key.id;
+    const pushName = message.pushName || 'Unknown';
+
+    // Skip broadcast status messages
+    if (jid === 'status@broadcast') {
+      logger.debug('Skipping status broadcast message');
+      return;
+    }
+
+    // Extract actual text content
+    const text = extractText(message);
+    
+    // Skip messages with no actual content
+    if (!text || text.trim() === '') {
+      logger.debug('Skipping message with no text content', { 
+        jid, 
+        waMessageId,
+        fromMe: message.key.fromMe 
+      });
+      return;
+    }
+
+    // Skip empty messages from self (delivery receipts, etc.)
+    if (message.key.fromMe && !text) {
+      logger.debug('Skipping empty self message');
+      return;
+    }
+
+    const timestamp = message.messageTimestamp * 1000;
+
+    // Extract quoted message info from contextInfo
+    const contextInfo = message.message?.extendedTextMessage?.contextInfo;
+    const quotedId = contextInfo?.stanzaId || null;
+
+    // Extract quote text directly from WhatsApp message (no DB dependency)
+    let quotedText = null;
+    
+    if (contextInfo?.quotedMessage) {
+      const qm = contextInfo.quotedMessage;
+      
+      quotedText = 
+        qm.conversation ||
+        qm.extendedTextMessage?.text ||
+        qm.imageMessage?.caption ||
+        qm.videoMessage?.caption ||
+        null;
+      
+      logger.info('Quote extracted:', { quotedText, quotedId });
+    }
+
+    // Parse JID safely and extract phone number
+    const jidInfo = parseJid(jid);
+    const phoneNumber = extractPhoneFromJid(jid);
+
+    logger.debug('Processing message for contact creation', {
+      jid,
+      type: jidInfo.type,
+      phoneNumber,
+      pushName,
+      fromMe: message.key.fromMe
+    });
+
+    // Create or update contact for user JIDs (@s.whatsapp.net and @lid)
+    let contactId = null;
+    let contact = null;
+    
+    if ((jidInfo.type === 'user' || jid.endsWith('@lid')) && phoneNumber) {
+      logger.info('Creating/updating contact', { phoneNumber, pushName, jidType: jid.endsWith('@lid') ? 'business' : 'regular' });
+      contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, pushName);
+      logger.info('Contact creation result', { contactId, phoneNumber, pushName });
+      
+      // Always update primary_jid to ensure it's stored from the message JID
+      await chatRepository.updatePrimaryJid(contactId, jid);
+      logger.info('Updated primary_jid for contact', { contactId, jid });
+      
+      // Get full contact details for profile picture fetching
+      try {
+        const contacts = await chatRepository.getContactsByPhoneNumbers([phoneNumber]);
+        contact = contacts.find(c => c.id === contactId);
+      } catch (error) {
+        logger.error('Failed to get contact details', { error: error.message, contactId });
+      }
+    } else {
+      logger.debug('Skipping contact creation for unsupported JID', { jid, type: jidInfo.type });
+    }
+
+    // Store message and get conversation_id for socket emission
+    const conversationId = await chatRepository.insertMessage({
+      jid,
+      waMessageId,
+      fromMe: message.key.fromMe ? 1 : 0,
+      text,
+      timestamp,
+      quotedMessageId: quotedId,
+      quotedText,
+      rawMessage: JSON.stringify(message)
+    });
+
+    // Link contact to conversation if we have one
+    if (contactId && conversationId) {
+      await chatRepository.linkContact(conversationId, contactId);
+    }
+
+    // Fetch profile picture using primary_jid if available and valid
+    if (contact && contact.primary_jid && shouldFetchProfilePicture(contact)) {
+      // Only fetch for @s.whatsapp.net, exclude @lid, @g.us, @broadcast
+      if (contact.primary_jid.endsWith('@s.whatsapp.net')) {
+        try {
+          const profilePicUrl = await fetchProfilePicture(sock, contact.primary_jid, contact);
+          if (profilePicUrl) {
+            await chatRepository.updateProfilePic(contact.id, profilePicUrl);
+            logger.info('Profile picture fetched and stored', { 
+              contactId: contact.id, 
+              primary_jid: contact.primary_jid 
+            });
+          }
+        } catch (error) {
+          logger.error('Profile picture fetch failed', { 
+            contactId: contact.id, 
+            error: error.message 
+          });
+          // Continue processing - don't block message flow
+        }
+      } else {
+        logger.debug('Skipping profile picture fetch for non-@s.whatsapp.net JID', { 
+          contactId: contact.id, 
+          primary_jid: contact.primary_jid 
+        });
+      }
+    }
+
+    logger.info('Message stored with contact', { waMessageId, conversationId, contactId, pushName });
+
+    // Emit to Socket.IO for real-time updates using conversation_id
+    if (global.io && conversationId) {
+      const messageData = {
+        jid,
+        conversationId,
+        waMessageId,
+        fromMe: message.key.fromMe,
+        message_text: text,
+        message_timestamp: timestamp,
+        quoted_message_id: quotedId,
+        quoted_text: quotedText,
+        quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null
+      };
+      
+      logger.info('Emitting new-message to Socket.IO', { 
+        conversationId, 
+        waMessageId, 
+        room: `conversation_${conversationId}` 
+      });
+      
+      global.io.to(`conversation_${conversationId}`).emit('new-message', messageData);
+    } else {
+      logger.warn('Socket.IO not available or no conversationId', { 
+        hasIo: !!global.io, 
+        conversationId 
+      });
+    }
 
     return conversationId;
   }

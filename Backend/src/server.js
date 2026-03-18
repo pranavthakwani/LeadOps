@@ -14,7 +14,11 @@ const start = async () => {
     const env = getEnv();
 
     logger.info('Initializing configurations');
-    initSQLServer();
+    
+    // MUST initialize SQL Server first and wait for it
+    await initSQLServer();
+    logger.info('SQL Server initialized successfully');
+    
     initOpenAI();
     initWhatsAppConfig();
     

@@ -108,19 +108,19 @@ class BaileysService {
       logger.info(`Created sessions directory for session persistence: ${sessionPath}`);
     }
 
-    // Always reload auth state for fresh connections
-    this.authState = await useMultiFileAuthState(sessionPath);
-    logger.info('Reloaded auth state for fresh connection');
-    
-    // Check session directory size and warn if bloated
+    // 🔧 Monitor session size - warn if getting large (no deletion)
     try {
-      const sessionFiles = fs.readdirSync(sessionPath);
-      if (sessionFiles.length > 100) {
-        logger.warn(`Session store appears bloated with ${sessionFiles.length} files - consider cleanup`);
+      const files = fs.readdirSync(sessionPath);
+      if (files.length > 800) {
+        logger.warn(`Session size is large (${files.length} files), monitor if needed`);
       }
     } catch (error) {
       logger.debug('Could not check session directory size', { error: error.message });
     }
+
+    // Always reload auth state for fresh connections
+    this.authState = await useMultiFileAuthState(sessionPath);
+    logger.info('Reloaded auth state for fresh connection');
 
     // Correct session detection for modern Baileys
     const hasSession = fs.existsSync(path.join(sessionPath, 'creds.json'));
@@ -153,6 +153,9 @@ class BaileysService {
       maxMsgRetryCount: 3,
     });
 
+    // Make socket globally available for profile picture fetching
+    global.baileysSock = this.sock;
+    
     this.setupEventHandlers();
     
     // Add appropriate status message based on session existence
@@ -222,40 +225,53 @@ class BaileysService {
     // Message events
     this.sock.ev.on('messages.upsert', async ({ messages }) => {
       for (const message of messages) {
-        logger.info('Processing message from upsert', { 
-          messageId: message.key.id, 
-          fromMe: message.key.fromMe,
-          messageText: message.message?.conversation || message.message?.extendedTextMessage?.text || 'No text'
-        });
-        
-        // Check if message already exists in DB (prevent duplicates)
         try {
-          const existing = await chatRepository.getMessageById(message.key.id);
-          if (existing) {
-            logger.debug('Message already exists in DB, skipping', { messageId: message.key.id });
-            continue;
+          logger.info('Processing message from upsert', { 
+            messageId: message.key.id, 
+            fromMe: message.key.fromMe,
+            messageText: message.message?.conversation || message.message?.extendedTextMessage?.text || 'No text'
+          });
+          
+          // Check if message already exists in DB (prevent duplicates)
+          try {
+            const existing = await chatRepository.getMessageById(message.key.id);
+            if (existing) {
+              logger.debug('Message already exists in DB, skipping', { messageId: message.key.id });
+              continue;
+            } else {
+              logger.debug('Message not found in DB, processing', { messageId: message.key.id });
+            }
+          } catch (error) {
+            logger.error('Error checking message existence', { 
+              messageId: message.key.id, 
+              error: error.message 
+            });
+          }
+
+          // Store ALL messages (both incoming and outgoing) for complete chat history
+          if (!message.key.fromMe) {
+            logger.info('Storing incoming message', { messageId: message.key.id });
+            await chatService.storeMessageWithContact(message);
+            await chatService.handleIncomingMessage(message);
           } else {
-            logger.debug('Message not found in DB, processing', { messageId: message.key.id });
+            logger.info('Storing outgoing message from phone/device', { 
+              messageId: message.key.id,
+              fromMe: message.key.fromMe
+            });
+            await chatService.storeMessageWithContact(message);
+            
+            // Process outgoing messages through pipeline to ensure conversation visibility
+            await chatService.handleOutgoingMessage(message);
           }
         } catch (error) {
-          logger.error('Error checking message existence', { 
-            messageId: message.key.id, 
-            error: error.message 
+          logger.error('Message processing failed', {
+            messageId: message.key?.id,
+            error: error.message,
+            stack: error.stack
           });
-        }
-
-        // Store ALL messages (both incoming and outgoing) for complete chat history
-        if (!message.key.fromMe) {
-          logger.info('Storing incoming message', { messageId: message.key.id });
-          await chatService.storeMessage(message);
-          await chatService.handleIncomingMessage(message);
-        } else {
-          logger.info('Storing outgoing message from phone/device', { 
-            messageId: message.key.id,
-            fromMe: message.key.fromMe
-          });
-          await chatService.storeMessage(message);
-          // Don't process through pipeline for outgoing messages, just store them
+          
+          // DO NOT throw - continue processing other messages
+          continue;
         }
       }
     });
@@ -347,16 +363,24 @@ class BaileysService {
       return;
     }
 
-    // For all other errors (including 408), reconnect automatically
+    // For all other errors (including 408),// Handle connection close with proper retry logic
     if (statusCode === 408) {
+      // 408 timeout - increment retry count
+      this.retryCount++;
       logger.warn('⏱️ 408 Timeout detected - WebSocket connection timed out');
-      logger.info('🔄 This is a temporary issue, will reconnect automatically');
+      logger.info(`🔄 Retry count: ${this.retryCount}/3`);
       
-      // Only clear session after 8 consecutive 408 failures (more tolerant)
-      if (this.retryCount >= 8) {
-        logger.warn('🧹 8 consecutive 408 timeouts detected - clearing potentially corrupted session');
+      // Clear session after 3 consecutive 408 failures
+      if (this.retryCount >= 3) {
+        logger.warn('🧹 3 consecutive 408 timeouts detected - clearing potentially corrupted session');
         await this.clearSessionState();
+        return; // Don't schedule reconnect - clearSessionState handles it
       }
+    } else if (statusCode === 440) {
+      // 440 error - session invalidated, clear immediately
+      logger.warn('Session invalidated → forcing reset');
+      await this.clearSessionState();
+      return; // Don't schedule reconnect - clearSessionState handles it
     } else {
       logger.info('🔄 Temporary disconnect detected - scheduling automatic reconnect');
     }

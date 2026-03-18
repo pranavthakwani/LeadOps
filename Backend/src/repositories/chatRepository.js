@@ -1,5 +1,21 @@
 import sql from 'mssql';
 import { getSQLPool } from '../config/sqlserver.js';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('ChatRepository');
+
+// DB safety wrapper
+async function safeQuery(fn, operation = 'database operation') {
+  try {
+    return await fn();
+  } catch (err) {
+    logger.error(`DB query failed: ${operation}`, { 
+      error: err.message,
+      stack: err.stack 
+    });
+    return null;
+  }
+}
 
 export const chatRepository = {
 
@@ -61,89 +77,91 @@ export const chatRepository = {
   },
 
   async insertMessage(data) {
-    const pool = await getSQLPool();
+    return await safeQuery(async () => {
+      const pool = await getSQLPool();
 
-    // Check if message already exists
-    const existingMessage = await pool.request()
-      .input('waMessageId', sql.NVarChar, data.waMessageId)
-      .query(`
-        SELECT id FROM chat_messages 
-        WHERE wa_message_id = @waMessageId
-      `);
+      // Check if message already exists
+      const existingMessage = await pool.request()
+        .input('waMessageId', sql.NVarChar, data.waMessageId)
+        .query(`
+          SELECT id FROM chat_messages 
+          WHERE wa_message_id = @waMessageId
+        `);
 
-    if (existingMessage.recordset.length > 0) {
-      console.log('Message already exists, skipping insert:', data.waMessageId);
-      
-      // Still need to return conversationId for socket emission
-      // Find the conversation for this JID
-      const conversation = await this.getOrCreateConversation(data.jid);
-      return conversation; // Return conversation_id for socket emission
-    }
+      if (existingMessage.recordset.length > 0) {
+        console.log('Message already exists, skipping insert:', data.waMessageId);
+        
+        // Still need to return conversationId for socket emission
+        // Find the conversation for this JID
+        const conversation = await this.getOrCreateConversation(data.jid);
+        return conversation; // Return conversation_id for socket emission
+      }
 
-    // 1️⃣ Get or create conversation
-    const conversationId = await this.getOrCreateConversation(data.jid);
+      // 1️⃣ Get or create conversation
+      const conversationId = await this.getOrCreateConversation(data.jid);
 
-    // 2️⃣ Insert the message with full raw message
-    const request = pool.request()
-      .input('jid', sql.NVarChar, data.jid)
-      .input('conversationId', sql.Int, conversationId)
-      .input('waMessageId', sql.NVarChar, data.waMessageId)
-      .input('fromMe', sql.Bit, data.fromMe)
-      .input('text', sql.NVarChar(sql.MAX), data.text)
-      .input('timestamp', sql.BigInt, data.timestamp)
-      .input('quotedMessageId', sql.NVarChar, data.quotedMessageId || null)
-      .input('quotedText', sql.NVarChar(sql.MAX), data.quotedText || null)
-      .input('quotedSender', sql.NVarChar, data.quotedSender || null)
-      .input('rawMessage', sql.NVarChar(sql.MAX), data.rawMessage || null)
-      .query(`
-        INSERT INTO chat_messages (
-          jid,
-          conversation_id,
-          wa_message_id,
-          from_me,
-          message_text,
-          message_timestamp,
-          created_at,
-          quoted_message_id,
-          quoted_text,
-          quoted_sender,
-          raw_message
-        )
-        VALUES (
-          @jid,
-          @conversationId,
-          @waMessageId,
-          @fromMe,
-          @text,
-          @timestamp,
-          GETUTCDATE(),
-          @quotedMessageId,
-          @quotedText,
-          @quotedSender,
-          @rawMessage
-        )
-      `);
+      // 2️⃣ Insert the message with full raw message
+      const request = pool.request()
+        .input('jid', sql.NVarChar, data.jid)
+        .input('conversationId', sql.Int, conversationId)
+        .input('waMessageId', sql.NVarChar, data.waMessageId)
+        .input('fromMe', sql.Bit, data.fromMe)
+        .input('text', sql.NVarChar(sql.MAX), data.text)
+        .input('timestamp', sql.BigInt, data.timestamp)
+        .input('quotedMessageId', sql.NVarChar, data.quotedMessageId || null)
+        .input('quotedText', sql.NVarChar(sql.MAX), data.quotedText || null)
+        .input('quotedSender', sql.NVarChar, data.quotedSender || null)
+        .input('rawMessage', sql.NVarChar(sql.MAX), data.rawMessage || null)
+        .query(`
+          INSERT INTO chat_messages (
+            jid,
+            conversation_id,
+            wa_message_id,
+            from_me,
+            message_text,
+            message_timestamp,
+            created_at,
+            quoted_message_id,
+            quoted_text,
+            quoted_sender,
+            raw_message
+          )
+          VALUES (
+            @jid,
+            @conversationId,
+            @waMessageId,
+            @fromMe,
+            @text,
+            @timestamp,
+            GETUTCDATE(),
+            @quotedMessageId,
+            @quotedText,
+            @quotedSender,
+            @rawMessage
+          )
+        `);
 
-    // 3️⃣ Update conversation metadata and unread count
-    const updateQuery = data.fromMe === 0 
-      ? `
-        UPDATE conversations
-        SET last_message_at = @timestamp,
-            unread_count = ISNULL(unread_count, 0) + 1
-        WHERE id = @conversationId
-      `
-      : `
-        UPDATE conversations
-        SET last_message_at = @timestamp
-        WHERE id = @conversationId
-      `;
+      // 3️⃣ Update conversation metadata and unread count
+      const updateQuery = data.fromMe === 0 
+        ? `
+          UPDATE conversations
+          SET last_message_at = @timestamp,
+              unread_count = ISNULL(unread_count, 0) + 1
+          WHERE id = @conversationId
+        `
+        : `
+          UPDATE conversations
+          SET last_message_at = @timestamp
+          WHERE id = @conversationId
+        `;
 
-    await pool.request()
-      .input('conversationId', sql.Int, conversationId)
-      .input('timestamp', sql.BigInt, data.timestamp)
-      .query(updateQuery);
+      await pool.request()
+        .input('conversationId', sql.Int, conversationId)
+        .input('timestamp', sql.BigInt, data.timestamp)
+        .query(updateQuery);
 
-    return conversationId; // Return conversation_id for socket emission
+      return conversationId; // Return conversation_id for socket emission
+    }, 'insertMessage');
   },
 
   async getMessageById(messageId) {
@@ -251,27 +269,70 @@ export const chatRepository = {
     const existing = await pool.request()
       .input('phone', sql.NVarChar, normalizedPhone)
       .query(`
-        SELECT id 
+        SELECT id, display_name, is_auto_generated
         FROM contacts 
         WHERE phone_number = @phone
       `);
 
     if (existing.recordset.length > 0) {
-      console.log('Found existing contact:', existing.recordset[0].id);
-      return existing.recordset[0].id;
+      const contact = existing.recordset[0];
+      console.log('Found existing contact:', contact.id);
+
+      // Update contact if new pushName is available
+      if (name && name !== 'Unknown' && name !== contact.display_name) {
+        // Always update if display_name is 'Unknown' or null/empty
+        // For auto-generated contacts, always update with new pushName
+        // For manual contacts, only update if current name is 'Unknown' or null
+        const shouldUpdate = 
+          (contact.is_auto_generated === 1) || 
+          (!contact.display_name || contact.display_name === 'Unknown' || contact.display_name === '');
+          
+        if (shouldUpdate) {
+          console.log('Updating contact name:', contact.id, 'from', contact.display_name, 'to', name);
+          await pool.request()
+            .input('id', sql.Int, contact.id)
+            .input('name', sql.NVarChar, name)
+            .query(`
+              UPDATE contacts
+                SET display_name = @name
+                WHERE id = @id
+            `);
+        }
+      }
+
+      return contact.id;
     }
 
+    // Create new contact with is_auto_generated = 1 for auto-created contacts
     const inserted = await pool.request()
       .input('phone', sql.NVarChar, normalizedPhone)
       .input('name', sql.NVarChar, name || 'Unknown')
+      .input('isAutoGenerated', sql.Bit, 1)
+      .input('primaryJid', sql.NVarChar, `${normalizedPhone}@s.whatsapp.net`)
       .query(`
-        INSERT INTO contacts (display_name, phone_number, is_auto_generated)
-        OUTPUT INSERTED.id
-        VALUES (@name, @phone, 0)
+        INSERT INTO contacts (display_name, phone_number, is_auto_generated, primary_jid)
+          OUTPUT INSERTED.id
+          VALUES (@name, @phone, @isAutoGenerated, @primaryJid)
       `);
 
-    console.log('Created new contact:', inserted.recordset[0].id);
+    console.log('Created new auto-generated contact:', inserted.recordset[0].id);
     return inserted.recordset[0].id;
+  },
+
+  // Update primary_jid for a contact (used when @lid JID is detected)
+  async updatePrimaryJid(contactId, jid) {
+    const pool = await getSQLPool();
+
+    await pool.request()
+      .input('contactId', sql.Int, contactId)
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        UPDATE contacts
+          SET primary_jid = @jid
+          WHERE id = @contactId
+      `);
+
+    logger.info(`Primary JID updated for contact ${contactId}`, { jid });
   },
 
   async getConversationsWithContacts() {
@@ -287,7 +348,8 @@ export const chatRepository = {
             c.unread_count,
             c.contact_id,
             ct.display_name,
-            ct.phone_number
+            ct.phone_number,
+            ct.profile_pic_url
         FROM conversations c
         LEFT JOIN contacts ct 
             ON c.contact_id = ct.id
@@ -295,6 +357,101 @@ export const chatRepository = {
       `);
 
     return result.recordset;
+  },
+
+  // Get contacts with conversations (paginated) - unique by contact
+  async getContactsWithConversationsPaginated(offset = 0, limit = 30) {
+    const pool = await getSQLPool();
+
+    const result = await pool.request()
+      .input('offset', offset)
+      .input('limit', limit)
+      .query(`
+        WITH RankedConversations AS (
+          SELECT 
+            c.id,
+            c.display_name,
+            c.phone_number,
+            c.is_auto_generated,
+            c.profile_pic_url,
+            conv.id as conversation_id,
+            conv.last_message_at,
+            conv.unread_count,
+            last_msg.message_text as last_message_text,
+            last_msg.from_me as last_message_from_me,
+            ROW_NUMBER() OVER (
+              PARTITION BY c.id 
+              ORDER BY conv.last_message_at DESC
+            ) as rn
+          FROM contacts c
+          INNER JOIN conversations conv 
+            ON c.id = conv.contact_id
+          LEFT OUTER JOIN (
+            SELECT 
+              cm.conversation_id,
+              cm.message_text,
+              cm.from_me,
+              ROW_NUMBER() OVER (
+                PARTITION BY cm.conversation_id 
+                ORDER BY cm.message_timestamp DESC
+              ) as rn
+            FROM chat_messages cm
+          ) last_msg ON conv.id = last_msg.conversation_id AND last_msg.rn = 1
+        ),
+        ContactsWithAllConvIds AS (
+          SELECT 
+            rc.id,
+            rc.display_name,
+            rc.phone_number,
+            rc.is_auto_generated,
+            rc.profile_pic_url,
+            rc.conversation_id,
+            rc.last_message_at,
+            rc.unread_count,
+            rc.last_message_text,
+            rc.last_message_from_me,
+            (
+              SELECT CAST(STRING_AGG(CAST(conv.id AS VARCHAR), ',') AS VARCHAR)
+              FROM conversations conv
+              WHERE conv.contact_id = rc.id
+            ) as all_conversation_ids
+          FROM RankedConversations rc
+          WHERE rc.rn = 1
+        )
+        SELECT 
+          id,
+          display_name,
+          phone_number,
+          is_auto_generated,
+          profile_pic_url,
+          conversation_id,
+          last_message_at,
+          unread_count,
+          all_conversation_ids,
+          last_message_text,
+          last_message_from_me
+        FROM ContactsWithAllConvIds
+        ORDER BY last_message_at DESC
+        OFFSET @offset ROWS
+        FETCH NEXT @limit ROWS ONLY
+      `);
+
+    return result.recordset;
+  },
+
+  // Get count of contacts with conversations (unique)
+  async getContactsWithConversationsCount() {
+    const pool = await getSQLPool();
+
+    const result = await pool.request()
+      .query(`
+        SELECT COUNT(DISTINCT c.id) as count
+        FROM contacts c
+        INNER JOIN conversations conv 
+          ON c.id = conv.contact_id
+      `);
+
+    return result.recordset[0].count;
   },
 
   // Get only one conversation per contact for the contacts list
@@ -389,6 +546,8 @@ export const chatRepository = {
           c.id,
           c.display_name,
           c.phone_number,
+          c.is_auto_generated,
+          c.profile_pic_url,
           conv.id as conversation_id,
           conv.last_message_at,
           conv.unread_count
@@ -409,13 +568,17 @@ export const chatRepository = {
   // Create new contact
   async createContact(displayName, phoneNumber) {
     const pool = await getSQLPool();
+    
+    const normalizedPhone = this.normalizePhone(phoneNumber);
+    const primaryJid = `${normalizedPhone}@s.whatsapp.net`;
 
     const result = await pool.request()
       .input('displayName', sql.NVarChar, displayName)
-      .input('phoneNumber', sql.NVarChar, phoneNumber)
+      .input('phoneNumber', sql.NVarChar, normalizedPhone)
+      .input('primaryJid', sql.NVarChar, primaryJid)
       .query(`
-        INSERT INTO contacts (display_name, phone_number)
-        VALUES (@displayName, @phoneNumber);
+        INSERT INTO contacts (display_name, phone_number, primary_jid)
+        VALUES (@displayName, @phoneNumber, @primaryJid);
         
         SELECT SCOPE_IDENTITY() as id;
       `);
@@ -461,7 +624,7 @@ export const chatRepository = {
     const result = await pool.request()
       .input('contactId', sql.Int, contactId)
       .query(`
-        SELECT id, display_name, phone_number
+        SELECT id, display_name, phone_number, profile_pic_url, profile_pic_fetched, primary_jid
         FROM contacts 
         WHERE id = @contactId
       `);
@@ -644,7 +807,44 @@ export const chatRepository = {
         FROM conversations 
         WHERE id = @conversationId
       `);
-
     return result.recordset[0] || null;
+  },
+
+  // Update contact profile picture
+  async getContactsNeedingProfilePics() {
+    const pool = await getSQLPool();
+
+    const result = await pool.request().query(`
+      SELECT 
+        id,
+        display_name,
+        phone_number,
+        primary_jid,
+        profile_pic_url,
+        profile_pic_fetched
+      FROM contacts
+      WHERE primary_jid IS NOT NULL
+        AND primary_jid LIKE '%@s.whatsapp.net'
+        AND (profile_pic_url IS NULL OR profile_pic_url = '')
+      ORDER BY created_at DESC
+    `);
+
+    return result.recordset;
+  },
+
+  async updateProfilePic(contactId, url) {
+    const pool = await getSQLPool();
+
+    await pool.request()
+      .input('contactId', sql.Int, contactId)
+      .input('url', sql.NVarChar, url)
+      .query(`
+        UPDATE contacts
+          SET profile_pic_url = @url,
+              profile_pic_fetched = 1
+          WHERE id = @contactId
+      `);
+
+    logger.info(`Profile picture updated for contact ${contactId}`, { url: url ? 'yes' : 'no' });
   }
 };

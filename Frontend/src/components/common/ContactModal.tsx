@@ -1,16 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown, AlertCircle, UserPlus } from 'lucide-react';
 import { countryCodes, getDefaultCountry, createWhatsAppJid, type CountryCode } from '../../data/countryCodes';
-import { chatApi } from '../../services/chatApi';
-
-interface Contact {
-  id: number;
-  display_name: string;
-  phone_number: string;
-  conversation_id?: number;
-  last_message_at?: string;
-  unread_count?: number;
-}
+import { chatApi, type Contact } from '../../services/chatApi';
 
 interface ContactModalProps {
   isOpen: boolean;
@@ -39,9 +30,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   const [contactPhone, setContactPhone] = useState(initialPhone);
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(getDefaultCountry());
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
-  const [existingContacts, setExistingContacts] = useState<any[]>([]);
+  const [existingContacts, setExistingContacts] = useState<Contact[]>([]);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
-  const [duplicateNumberContact, setDuplicateNumberContact] = useState<any>(null);
+  const [duplicateNumberContact, setDuplicateNumberContact] = useState<Contact | null>(null);
   const [showMergeOption, setShowMergeOption] = useState(false);
 
   // Reset form when modal opens with new initial values
@@ -64,7 +55,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
       if (contactName.trim().length >= 2) {
         try {
           const contacts = await chatApi.getContacts();
-          const filtered = contacts.filter((contact: Contact) => 
+          const filtered = contacts.filter((contact) => 
             contact.display_name.toLowerCase().includes(contactName.toLowerCase())
           );
           setExistingContacts(filtered);
@@ -89,7 +80,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
         try {
           const contacts = await chatApi.getContacts();
           const normalizedPhone = contactPhone.replace(/\D/g, '');
-          const duplicate = contacts.find((contact: Contact) => {
+          const duplicate = contacts.find((contact) => {
             const contactPhone = contact.phone_number.replace(/\D/g, '');
             return contactPhone.includes(normalizedPhone) || normalizedPhone.includes(contactPhone);
           });
@@ -151,7 +142,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
     setContactPhone(formatted);
   };
 
-  const handleNameSelect = (contact: any) => {
+  const handleNameSelect = (contact: Contact) => {
     setContactName(contact.display_name);
     setContactPhone(contact.phone_number);
     setShowNameSuggestions(false);
@@ -327,7 +318,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             {/* Name Suggestions Dropdown */}
             {showNameSuggestions && existingContacts.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
-                {existingContacts.map((contact: any) => (
+                {existingContacts.map((contact) => (
                   <button
                     key={contact.id}
                     type="button"

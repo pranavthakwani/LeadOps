@@ -40,12 +40,6 @@ export const createApp = () => {
   // Chat routes
   app.use('/api', chatRoutes);
 
-  // Serve static frontend files
-  app.use(express.static(path.join(__dirname, '../../Frontend/dist')));
-  
-  // Serve assets specifically to handle brand images
-  app.use('/assets', express.static(path.join(__dirname, '../../Frontend/dist/assets')));
-
   app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
@@ -760,8 +754,18 @@ export const createApp = () => {
     }
   });
 
+  // Serve static frontend files (after all API routes)
+  app.use(express.static(path.join(__dirname, '../../Frontend/dist')));
+  
+  // Serve assets specifically to handle brand images
+  app.use('/assets', express.static(path.join(__dirname, '../../Frontend/dist/assets')));
+
   // Serve frontend for all non-API routes
   app.get('*', (req, res) => {
+    // Don't catch API routes
+    if (req.url.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
     res.sendFile(path.join(__dirname, '../../Frontend/dist/index.html'));
   });
 

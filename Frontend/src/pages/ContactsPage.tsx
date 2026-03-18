@@ -3,12 +3,14 @@ import { Users, Search, Edit } from 'lucide-react';
 import { chatApi } from '../services/chatApi';
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { EditContactModal } from '../components/common/EditContactModal';
+import { ProfilePicPreviewModal } from '../components/common/ProfilePicPreviewModal';
 import { Loader } from '../components/common/Loader';
 
 interface Contact {
   id: number;
   display_name: string;
   phone_number: string;
+  is_auto_generated?: boolean;
   conversation_id: number | null;
   last_message_at: string | null;
   unread_count: number;
@@ -19,6 +21,7 @@ interface MergedContact extends Contact {
   total_unread_count: number;
   last_message_preview?: string;
   last_message_from_me?: boolean;
+  profile_pic_url?: string;
 }
 
 export const ContactsPage: React.FC = () => {
@@ -26,144 +29,97 @@ export const ContactsPage: React.FC = () => {
   const [selectedContact, setSelectedContact] = useState<MergedContact | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [profilePreview, setProfilePreview] = useState<{ url: string; name: string } | null>(null);
+
+  // Helper function to format contact display name
+  const formatContactDisplayName = (contact: Contact) => {
+    if (contact.display_name && contact.display_name !== 'Unknown' && contact.display_name !== null) {
+      return contact.display_name;
+    }
+    return contact.phone_number || 'Unknown';
+  };
+
+  // Helper function to get contact display with phone number for auto-generated
+  const getContactDisplay = (contact: Contact) => {
+    const displayName = formatContactDisplayName(contact);
+    if (contact.is_auto_generated && contact.display_name && contact.display_name !== 'Unknown') {
+      return `${displayName}\n~${contact.phone_number}`;
+    }
+    return displayName;
+  };
 
   useEffect(() => {
     loadContacts();
-    
-    // Set up periodic refresh for unread counts
-    const interval = setInterval(() => {
-      loadContacts();
-    }, 10000); // Refresh every 10 seconds
-    
-    return () => clearInterval(interval);
   }, []);
 
-  const loadContacts = async () => {
+  const loadContacts = async (pageNum: number = 1, isLoadMore: boolean = false) => {
     try {
-      const contactsData = await chatApi.getContacts();
+      if (isLoadMore) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
+      const result = await chatApi.getContactsPaginated(pageNum, 30);
       
-      // Merge conversations by phone number
-      const mergedContactsMap = new Map<string, MergedContact>();
+      // Backend returns unique contacts with all_conversation_ids as comma-separated string
+      const contacts = result.contacts.map(contact => ({
+        ...contact,
+        total_unread_count: contact.unread_count,
+        all_conversation_ids: Array.isArray(contact.all_conversation_ids) 
+          ? contact.all_conversation_ids 
+          : (contact.all_conversation_ids ? (contact.all_conversation_ids as string).split(',').map((id: string) => parseInt(id.trim())) : []),
+        last_message_preview: contact.last_message_text || '',
+        last_message_from_me: !!contact.last_message_from_me
+      }));
       
-      contactsData.forEach((contact: Contact) => {
-        const key = contact.phone_number;
-        
-        if (mergedContactsMap.has(key)) {
-          // Update existing merged contact
-          const existing = mergedContactsMap.get(key)!;
-          existing.all_conversation_ids.push(contact.conversation_id!);
-          existing.total_unread_count += contact.unread_count;
-          
-          // Use the most recent conversation
-          if (contact.last_message_at && 
-              (!existing.last_message_at || 
-               new Date(contact.last_message_at) > new Date(existing.last_message_at))) {
-            existing.last_message_at = contact.last_message_at;
-            existing.conversation_id = contact.conversation_id;
-          }
-        } else {
-          // Create new merged contact
-          mergedContactsMap.set(key, {
-            ...contact,
-            all_conversation_ids: contact.conversation_id ? [contact.conversation_id] : [],
-            total_unread_count: contact.unread_count
-          });
-        }
-      });
+      // Backend now returns unique contacts, no need to merge
+      if (isLoadMore) {
+        // Append to existing contacts
+        setContacts(prev => [...prev, ...contacts]);
+      } else {
+        // Replace all contacts
+        setContacts(contacts);
+      }
+
+      setHasMore(result.pagination.hasMore);
+      setPage(pageNum);
       
-      const mergedContacts = Array.from(mergedContactsMap.values());
-      
-      // Fetch last message for each merged contact
-      const contactsWithLastMessage = await Promise.all(
-        mergedContacts.map(async (contact) => {
-          let lastMessagePreview = '';
-          let lastMessageFromMe = false;
-          
-          // Get the most recent conversation
-          if (contact.conversation_id) {
-            try {
-              const messages = await chatApi.getMessagesByConversation(contact.conversation_id);
-              if (messages.length > 0) {
-                const lastMessage = messages[messages.length - 1];
-                lastMessagePreview = lastMessage.message_text || '';
-                lastMessageFromMe = lastMessage.from_me;
-              }
-            } catch (error) {
-              console.error('Error fetching last message:', error);
-            }
-          }
-          
-          return {
-            ...contact,
-            last_message_preview: lastMessagePreview,
-            last_message_from_me: lastMessageFromMe
-          };
-        })
-      );
-      
-      // Sort by latest message timing (most recent first) - exactly like WhatsApp
-      contactsWithLastMessage.sort((a, b) => {
-        // Handle null/undefined dates
-        const dateA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-        const dateB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-        
-        // Sort in descending order (most recent first)
-        return dateB - dateA;
-      });
-      
-      setContacts(contactsWithLastMessage);
     } catch (error) {
       console.error('Error loading contacts:', error);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   const filteredContacts = contacts.filter(contact =>
-    contact.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.phone_number.includes(searchQuery)
+    (contact.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) || false) ||
+    (contact.phone_number?.includes(searchQuery) || false)
   );
 
   const handleContactClick = async (contact: MergedContact) => {
     setSelectedContact(contact);
+    // Mark all conversations as read when contact is selected
+    await Promise.all(
+      contact.all_conversation_ids.map(convId => chatApi.markConversationRead(convId))
+    );
     
-    // Reset unread counts for all conversations of this contact
-    if (contact.all_conversation_ids.length > 0) {
-      try {
-        // Reset unread count on backend for all conversations
-        await Promise.all(
-          contact.all_conversation_ids.map(convId => 
-            chatApi.markConversationRead(convId)
-          )
-        );
-        
-        // Update local state to show unread count as 0
-        setContacts(prev => prev.map(c => 
-          c.id === contact.id ? { ...c, total_unread_count: 0 } : c
-        ));
-      } catch (error) {
-        console.error('Error resetting unread count:', error);
-      }
-    }
-    
-    // Use the most recent conversation ID from the merged contact
-    let conversationId = contact.conversation_id;  
-    
-    // If no conversation exists, create one
-    if (!conversationId) {
-      conversationId = await chatApi.getConversationByContact(contact.id);
-      if (conversationId) {
-        // Update contact with new conversation_id
-        setContacts(prev => prev.map(c => 
-          c.id === contact.id ? { ...c, conversation_id: conversationId } : c
-        ));
-      }
-    }
-    
-    // Update selected contact with conversation ID
-    if (conversationId) {
-      setSelectedContact(prev => prev ? { ...prev, conversation_id: conversationId } : null);
+    // Update local state to reflect read status
+    setContacts(prev => prev.map(c => 
+      c.phone_number === contact.phone_number 
+        ? { ...c, total_unread_count: 0 }
+        : c
+    ));
+  };
+
+  const loadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadContacts(page + 1, true);
     }
   };
 
@@ -202,7 +158,15 @@ export const ContactsPage: React.FC = () => {
         </div>
 
         {/* Contacts List */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div 
+          className="flex-1 overflow-y-auto min-h-0"
+          onScroll={(e) => {
+            const element = e.currentTarget;
+            if (element.scrollHeight - element.scrollTop <= element.clientHeight + 100) {
+              loadMore();
+            }
+          }}
+        >
           {loading ? (
             <div className="p-4">
               <Loader type="contacts" />
@@ -226,17 +190,38 @@ export const ContactsPage: React.FC = () => {
                 }`}
               >
                 {/* Avatar */}
-                <div className="w-12 h-12 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center mr-3">
-                  <span className="text-white font-semibold">
-                    {contact.display_name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
+                {contact.profile_pic_url ? (
+                  <img
+                    src={contact.profile_pic_url}
+                    className="w-12 h-12 rounded-full object-cover mr-3 cursor-pointer hover:opacity-90 transition-opacity"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (nextElement) {
+                        nextElement.classList.remove('hidden');
+                      }
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProfilePreview({
+                        url: contact.profile_pic_url!,
+                        name: formatContactDisplayName(contact)
+                      });
+                    }}
+                  />
+                ) : (
+                  <div className="w-12 h-12 bg-[#128c7e] dark:bg-[#005c4b] rounded-full flex items-center justify-center mr-3">
+                    <span className="text-white font-semibold">
+                      {formatContactDisplayName(contact).charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
                 
                 {/* Contact Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                      {contact.display_name}
+                      {getContactDisplay(contact)}
                     </h3>
                     <div className="flex items-center gap-2">
                       {contact.total_unread_count > 0 && (
@@ -272,6 +257,14 @@ export const ContactsPage: React.FC = () => {
               </div>
             ))
           )}
+          
+          {/* Load More Indicator */}
+          {loadingMore && (
+            <div className="p-4 text-center">
+              <Loader type="contacts" />
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading more contacts...</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -302,6 +295,14 @@ export const ContactsPage: React.FC = () => {
           onUpdate={loadContacts}
         />
       )}
+      
+      {/* Profile Picture Preview Modal */}
+      <ProfilePicPreviewModal
+        isOpen={!!profilePreview}
+        imageUrl={profilePreview?.url || null}
+        contactName={profilePreview?.name || ''}
+        onClose={() => setProfilePreview(null)}
+      />
     </div>
   );
 };

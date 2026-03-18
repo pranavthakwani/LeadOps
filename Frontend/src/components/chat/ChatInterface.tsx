@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { User, X, Reply, Send, ChevronDown } from 'lucide-react';
+import { X, Reply, Send, ChevronDown } from 'lucide-react';
 import { chatApi } from '../../services/chatApi';
 import { SOCKET_BASE_URL } from '../../config/network';
 import type { Message } from '../../types/message';
 import { ContactModal } from '../common/ContactModal';
+import { ProfilePicPreviewModal } from '../common/ProfilePicPreviewModal';
 import { Loader } from '../common/Loader';
 
 // Helper functions
@@ -105,6 +106,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     text: string;
     sender: string;
   } | null>(null);
+  const [profilePreview, setProfilePreview] = useState<{ url: string; name: string } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -135,7 +137,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               jid: conversation.jid,
               contact_id: conversation.contact_id,
               display_name: conversation.display_name,
-              phone_number: conversation.phone_number
+              phone_number: conversation.phone_number,
+              profile_pic_url: conversation.profile_pic_url
             };
             setConversationData(convData);
           }
@@ -158,7 +161,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               jid: jid,
               contact_id: null,
               display_name: message.sender || 'Unknown Contact',
-              phone_number: message.senderNumber || jid.replace('@s.whatsapp.net', '')
+              phone_number: message.senderNumber || jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '')
             };
             setConversationData(convData);
             
@@ -174,14 +177,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               jid: conversation.jid,
               contact_id: conversation.contact_id,
               display_name: conversation.display_name,
-              phone_number: conversation.phone_number
+              phone_number: conversation.phone_number,
+              profile_pic_url: conversation.profile_pic_url
             };
             setConversationData(convData);
           }
 
           // Initialize contact phone from JID if no contact exists
           if (!convData.contact_id && convData.jid) {
-            const phone = convData.jid.replace('@s.whatsapp.net', '').replace('@g.us', '').replace('@broadcast', '');
+            const phone = convData.jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '');
             // Extract phone number without country code for display (if needed for future use)
             const phoneOnly = phone.replace(/^\+/, '');
             console.log('Phone extracted from JID:', phoneOnly);
@@ -450,7 +454,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             jid: updatedConversation.jid,
             contact_id: updatedConversation.contact_id,
             display_name: updatedConversation.display_name,
-            phone_number: updatedConversation.phone_number
+            phone_number: updatedConversation.phone_number,
+            profile_pic_url: updatedConversation.profile_pic_url
           };
           setConversationData(updatedConversationData);
         }
@@ -554,7 +559,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       // For incoming messages, try to get the contact name
       senderName = conversationData?.display_name || 
                    conversationData?.phone_number || 
-                   conversationData?.jid?.replace('@s.whatsapp.net', '')?.replace('@g.us', '')?.replace('@broadcast', '') ||
+                   conversationData?.jid?.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '') ||
                    'Contact';
     }
     
@@ -634,17 +639,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="backdrop-blur-xl bg-[#075e54]/85 dark:bg-[#0b141a]/85 px-4 py-3 flex items-center justify-between rounded-2xl shadow-lg shadow-black/20 border border-white/10">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 bg-[#128c7e] rounded-full flex items-center justify-center shadow-md flex-shrink-0">
-                {conversationData?.display_name ? (
+                {conversationData?.profile_pic_url ? (
+                  <img
+                    src={conversationData.profile_pic_url}
+                    className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (nextElement) {
+                        nextElement.classList.remove('hidden');
+                      }
+                    }}
+                    onClick={() => {
+                      setProfilePreview({
+                        url: conversationData.profile_pic_url!,
+                        name: conversationData.display_name || conversationData.phone_number || 'Unknown'
+                      });
+                    }}
+                  />
+                ) : conversationData?.display_name && conversationData.display_name !== null ? (
                   <span className="text-white font-semibold text-sm">
                     {conversationData.display_name.charAt(0).toUpperCase()}
                   </span>
                 ) : (
-                  <User className="w-6 h-6 text-white" />
+                  <span className="text-white font-semibold text-sm">??</span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-white drop-shadow-sm truncate">
-                  {conversationData?.display_name || conversationData?.phone_number || 'Unknown'}
+                  {conversationData?.display_name || conversationData?.phone_number || conversationData?.jid || 'Unknown'}
                 </h2>
                 <p className="text-xs text-[#dcf8c6]/90 truncate">
                   {conversationData?.phone_number || conversationData?.jid || 'No number'}
@@ -948,6 +971,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onSubmit={handleSaveContact}
           isSubmitting={isSavingContact}
           conversationId={conversationId || undefined}
+        />
+        
+        {/* Profile Picture Preview Modal */}
+        <ProfilePicPreviewModal
+          isOpen={!!profilePreview}
+          imageUrl={profilePreview?.url || null}
+          contactName={profilePreview?.name || ''}
+          onClose={() => setProfilePreview(null)}
         />
       </div>
     </>

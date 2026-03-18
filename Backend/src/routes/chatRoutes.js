@@ -46,6 +46,31 @@ router.post('/conversations/:id/mark-read', async (req, res) => {
   }
 });
 
+// Cleanup Unknown contacts
+router.post('/cleanup-unknown-contacts', async (req, res) => {
+  try {
+    const { chatRepository } = require('../repositories/chatRepository.js');
+    const { getSQLPool } = require('../config/sqlserver.js');
+    const sql = require('mssql');
+    
+    const pool = getSQLPool();
+    
+    const result = await pool.request()
+      .query(`
+        UPDATE contacts
+        SET display_name = phone_number
+        WHERE display_name = 'Unknown'
+      `);
+
+    res.json({ 
+      success: true, 
+      updatedCount: result.rowsAffected[0] 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get conversations list with contact info
 router.get('/conversations', async (req, res) => {
   try {
@@ -146,12 +171,38 @@ router.post('/conversations/:id/save-contact', async (req, res) => {
   }
 });
 
+// Get contacts with conversations (paginated)
+router.get('/contacts-with-conversations', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+    
+    const contacts = await chatRepository.getContactsWithConversationsPaginated(offset, limit);
+    const totalCount = await chatRepository.getContactsWithConversationsCount();
+    
+    res.json({ 
+      success: true, 
+      data: contacts,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        hasMore: offset + limit < totalCount
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get all contacts with conversation info
 router.get('/contacts', async (req, res) => {
   try {
     const contacts = await chatRepository.getContactsWithConversations();
     res.json({ success: true, data: contacts });
   } catch (err) {
+    console.error('❌ Contacts API error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -7,6 +7,8 @@
     "start": "node --import ./preload.js src/server.js",
     "dev": "node --import ./preload.js src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "import:contacts": "node --import ./preload.js scripts/import-excel-contacts.js",
+    "migrate:profile-pic": "node --import ./preload.js scripts/run-migration.js",
     "pm2:start": "node pm2-start.js",
     "pm2:stop": "pm2 stop whatsapp-ai-bot",
     "pm2:restart": "node pm2-start.js",
@@ -24,6 +26,7 @@
     "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.8.3",
     "tedious": "^19.2.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   }
 }

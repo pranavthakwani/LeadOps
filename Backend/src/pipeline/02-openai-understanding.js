@@ -123,6 +123,38 @@ If multiple brand families appear in one message, assign brand per item separate
 
 Correct minor spelling mistakes in brand or model names when the intended series or brand is clearly identifiable (edit-distance ≤ 1). If correction is uncertain or multiple valid matches exist, do NOT guess and keep original.
 
+MODEL NORMALIZATION (CONTROLLED GUESSING):
+
+- You MAY normalize model names ONLY when the mapping is obvious and safe.
+- You MAY expand abbreviations (e.g., "17 air" → "iPhone 17 Air") ONLY if:
+  → brand is clear
+  → model number matches exactly
+  → no ambiguity exists
+
+- You MUST NOT:
+  → change model numbers (e.g., 26 → 23 ❌)
+  → replace with older or more common models ❌
+  → guess based on popularity ❌
+  → invent missing model parts ❌
+
+- If multiple possible matches exist:
+  → KEEP original model text (do NOT guess)
+
+Examples:
+
+SAFE (allowed):
+- "17 air" → "iPhone 17 Air"
+- "s25 ultra" → "Samsung S25 Ultra"
+- "t4x" → "Vivo T4x"
+
+NOT SAFE (forbidden):
+- "s26 ultra" → "S23 Ultra" ❌
+- "phone 4a" → "Phone 1" ❌
+- "17 air" → "MacBook Air" ❌
+
+Rule:
+Better to keep partial model than return incorrect full model.
+
 Parsing Rules:
 
 - Parse RAM/storage (8/128 → ram=8, storage=128).
@@ -168,7 +200,7 @@ Extract structured JSON from this WhatsApp message:
 
 """${rawText}"""
 
-Interpret naturally and normalize brand/model to most likely real product names.
+Normalize model names ONLY when mapping is exact and unambiguous. Do NOT guess.
 
 Return JSON EXACTLY matching this schema:
 
