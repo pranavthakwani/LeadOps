@@ -811,6 +811,39 @@ export const chatRepository = {
   },
 
   // Update contact profile picture
+  // Get contacts by phone numbers (for profile picture fetching)
+  async getContactsByPhoneNumbers(phoneNumbers) {
+    const pool = await getSQLPool();
+
+    if (!phoneNumbers || phoneNumbers.length === 0) {
+      return [];
+    }
+
+    // Create parameter placeholders for IN clause
+    const placeholders = phoneNumbers.map((_, index) => `@phone${index}`).join(',');
+    
+    const request = pool.request();
+    
+    // Add parameters
+    phoneNumbers.forEach((phone, index) => {
+      request.input(`phone${index}`, sql.NVarChar, phone);
+    });
+
+    const result = await request.query(`
+      SELECT 
+        id,
+        display_name,
+        phone_number,
+        profile_pic_url,
+        profile_pic_fetched,
+        primary_jid
+      FROM contacts
+      WHERE phone_number IN (${placeholders})
+    `);
+
+    return result.recordset;
+  },
+
   async getContactsNeedingProfilePics() {
     const pool = await getSQLPool();
 
