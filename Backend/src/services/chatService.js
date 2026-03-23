@@ -51,6 +51,23 @@ export const chatService = {
       return;
     }
 
+    // Extract real participant from broadcast/group messages
+    let realJid = jid;
+    let sourceJid = jid;
+    
+    if (jid.endsWith('@g.us') || jid.endsWith('@broadcast')) {
+      if (message.key.participant) {
+        realJid = message.key.participant;
+        logger.info('StoreMessage: Extracted real participant', {
+          sourceJid: jid,
+          realJid: message.key.participant
+        });
+      } else {
+        logger.warn('StoreMessage: No participant in broadcast/group, skipping', { jid });
+        return; // Skip if no participant
+      }
+    }
+
     const timestamp = message.messageTimestamp * 1000;
 
     // Extract quoted message info from contextInfo
@@ -73,9 +90,10 @@ export const chatService = {
       logger.info('Quote extracted:', { quotedText, quotedId });
     }
 
-    // Store message and get conversation_id for socket emission
+    // Store message with real JID for contact mapping and source JID for conversation context
     const conversationId = await chatRepository.insertMessage({
-      jid,
+      jid: realJid, // Use real participant JID for contact mapping
+      sourceJid: sourceJid, // Store original JID for context
       waMessageId,
       fromMe: message.key.fromMe ? 1 : 0,
       text,
@@ -90,7 +108,8 @@ export const chatService = {
     // Emit to Socket.IO for real-time updates using conversation_id
     if (global.io && conversationId) {
       const messageData = {
-        jid,
+        jid: realJid, // Real participant JID
+        sourceJid: sourceJid, // Original broadcast/group JID
         conversationId,
         waMessageId,
         fromMe: message.key.fromMe,
@@ -141,21 +160,47 @@ export const chatService = {
         return;
       }
 
-      // Business message filter before pipeline
+      // Parse JID to check message type and extract real participant
+      const jidInfo = parseJid(messageData.key.remoteJid);
+      let realJid = messageData.key.remoteJid;
+      let sourceJid = messageData.key.remoteJid;
+      
+      // Extract real participant from broadcast/group messages
+      if (messageData.key.remoteJid.endsWith('@g.us') || messageData.key.remoteJid.endsWith('@broadcast')) {
+        if (messageData.key.participant) {
+          realJid = messageData.key.participant;
+          logger.info('Extracted real participant from broadcast/group', {
+            sourceJid: messageData.key.remoteJid,
+            realJid: messageData.key.participant,
+            messageType: jidInfo.type
+          });
+        } else {
+          logger.warn('No participant found in broadcast/group message', {
+            jid: messageData.key.remoteJid
+          });
+          // Skip if no participant - don't create fake contacts
+          return;
+        }
+      }
+      
+      // Apply business filter to ALL messages (including broadcasts)
       if (!isBusinessMessage(text)) {
         logger.info('Filtered non-business message', {
-          preview: text.substring(0, 50)
+          preview: text.substring(0, 50),
+          realJid: realJid,
+          sourceJid: sourceJid,
+          type: jidInfo.type
         });
         return;
       }
 
-      // Build payload for AI pipeline
+      // Build payload for AI pipeline with real JID
       const payload = {
         body: {
-          sender: messageData.key.remoteJid,
+          sender: realJid, // Use real participant JID
           sender_name: messageData.pushName || 'Unknown',
-          chat_id: messageData.key.remoteJid,
-          chat_type: 'individual',
+          chat_id: sourceJid, // Keep original JID for chat context
+          chat_type: jidInfo.type === 'group' || jidInfo.type === 'broadcast' ? 'individual' : 'individual',
           timestamp: messageData.messageTimestamp,
           raw_text: text,
           wa_message_id: messageData.key.id || null
@@ -277,7 +322,7 @@ export const chatService = {
     return conversationId;
   },
 
-  // Handle outgoing messages with business filtering and pipeline processing
+  // Handle outgoing messages - ONLY store in conversations, no business filter or AI pipeline
   async handleOutgoingMessage(message) {
     try {
       const messageData = message;
@@ -302,37 +347,13 @@ export const chatService = {
         return;
       }
 
-      // Business message filter for outgoing messages
-      if (!isBusinessMessage(text)) {
-        logger.info('Filtered non-business outgoing message', {
-          preview: text.substring(0, 50)
-        });
-        return;
-      }
-
-      // Build payload for AI pipeline (similar to incoming but marked as outgoing)
-      const payload = {
-        body: {
-          sender: messageData.key.remoteJid,
-          sender_name: messageData.pushName || 'You',
-          chat_id: messageData.key.remoteJid,
-          chat_type: 'individual',
-          timestamp: messageData.messageTimestamp,
-          raw_text: text,
-          wa_message_id: messageData.key.id || null,
-          from_me: true // Mark as outgoing
-        },
-        raw_text: text
-      };
-
-      logger.info('Outbound message received for processing', {
-        from: payload.body.sender,
-        chat_type: payload.body.chat_type,
-        preview: text.substring(0, 50)
+      // Outgoing messages should NOT go through business filter or AI pipeline
+      // They are only stored in conversations for chat history
+      logger.info('Outgoing message stored only (no AI processing)', {
+        jid: messageData.key.remoteJid,
+        preview: text.substring(0, 50),
+        messageId: messageData.key.id
       });
-
-      // Process through pipeline (same as incoming messages)
-      await processPipeline(payload);
 
     } catch (error) {
       logger.error('❌ Error handling outgoing message', { 
@@ -343,7 +364,7 @@ export const chatService = {
   },
 
   // Store message with automatic contact creation and pushName handling
-  async storeMessageWithContact(message) {
+  async storeMessageWithContact(message, sock = null) {
     const jid = message.key.remoteJid;
     const waMessageId = message.key.id;
     const pushName = message.pushName || 'Unknown';
@@ -397,50 +418,159 @@ export const chatService = {
 
     // Parse JID safely and extract phone number
     const jidInfo = parseJid(jid);
-    const phoneNumber = extractPhoneFromJid(jid);
+    let phoneNumber = null;
+    let actualJid = jid; // Default to original JID
 
     logger.debug('Processing message for contact creation', {
       jid,
       type: jidInfo.type,
-      phoneNumber,
       pushName,
       fromMe: message.key.fromMe
     });
 
-    // Create or update contact for user JIDs (@s.whatsapp.net and @lid)
+    // Handle different JID types properly
+    if (jidInfo.type === 'user') {
+      // @s.whatsapp.net - real user
+      phoneNumber = extractPhoneFromJid(jid);
+      actualJid = jid;
+    } else if (jidInfo.type === 'broadcast') {
+      // @broadcast - extract participant for real user
+      logger.info('Processing broadcast message', {
+        broadcastJid: jid,
+        hasParticipant: !!message.key?.participant,
+        participant: message.key?.participant
+      });
+      
+      if (message.key?.participant) {
+        const participantJid = message.key.participant;
+        const participantInfo = parseJid(participantJid);
+        
+        if (participantInfo.type === 'user') {
+          phoneNumber = extractPhoneFromJid(participantJid);
+          actualJid = participantJid;
+          logger.info('Resolved broadcast participant to real user', {
+            broadcastJid: jid,
+            participantJid,
+            phoneNumber
+          });
+        } else {
+          logger.debug('Broadcast participant is not a user, skipping', {
+            broadcastJid: jid,
+            participantJid
+          });
+          return; // Skip if participant is not a user
+        }
+      } else {
+        logger.debug('Broadcast message has no participant, skipping', { jid });
+        return; // Skip broadcast messages without participant
+      }
+    } else if (jidInfo.type === 'group') {
+      // @g.us - resolve participant to real user but mark as group message
+      if (message.key?.participant) {
+        const participantJid = message.key.participant;
+        const participantInfo = parseJid(participantJid);
+        
+        if (participantInfo.type === 'user') {
+          phoneNumber = extractPhoneFromJid(participantJid);
+          actualJid = participantJid;
+          logger.info('Resolved group participant to real user', {
+            groupJid: jid,
+            participantJid,
+            phoneNumber,
+            isGroupMessage: true
+          });
+        } else {
+          logger.debug('Group participant is not a user, skipping', {
+            groupJid: jid,
+            participantJid
+          });
+          return; // Skip if participant is not a user
+        }
+      } else {
+        logger.debug('Group message has no participant, skipping', { jid });
+        return; // Skip group messages without participant
+      }
+    } else if (jid.endsWith('@lid')) {
+      // @lid - store as-is without phone extraction
+      phoneNumber = null; // No phone extraction for @lid
+      actualJid = jid;
+    } else {
+      // Unknown JID type - skip
+      logger.debug('Skipping unknown JID type', { jid, type: jidInfo.type });
+      return;
+    }
+
+    // Create or update contact only for valid user JIDs
     let contactId = null;
     let contact = null;
+    let isGroupMessage = false;
+    let originalGroupJid = null;
     
-    if ((jidInfo.type === 'user' || jid.endsWith('@lid')) && phoneNumber) {
-      logger.info('Creating/updating contact', { phoneNumber, pushName, jidType: jid.endsWith('@lid') ? 'business' : 'regular' });
+    // Safety check: only create contacts for @s.whatsapp.net and @lid
+    if (!actualJid.endsWith('@s.whatsapp.net') && !actualJid.endsWith('@lid')) {
+      logger.debug('Skipping contact creation - not a user JID', { actualJid });
+      return;
+    }
+    
+    // Check if this is a group message
+    if (jidInfo.type === 'group') {
+      isGroupMessage = true;
+      originalGroupJid = jid;
+      logger.info('Processing group message', { groupJid: jid, participantJid: actualJid });
+    }
+    
+    if (actualJid.endsWith('@s.whatsapp.net') && phoneNumber) {
+      logger.info('Creating/updating contact for @s.whatsapp.net', { phoneNumber, pushName, isGroupMessage });
       contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, pushName);
       logger.info('Contact creation result', { contactId, phoneNumber, pushName });
       
-      // Always update primary_jid to ensure it's stored from the message JID
-      await chatRepository.updatePrimaryJid(contactId, jid);
-      logger.info('Updated primary_jid for contact', { contactId, jid });
+      // Always update primary_jid to ensure it's stored from actual JID
+      await chatRepository.updatePrimaryJid(contactId, actualJid);
+      logger.info('Updated primary_jid for contact', { contactId, actualJid });
       
-      // Get full contact details for profile picture fetching
+    } else if (actualJid.endsWith('@lid')) {
+      logger.info('Creating/updating contact for @lid', { actualJid, pushName, isGroupMessage });
+      // For @lid, create contact with JID as identifier (no phone number)
+      contactId = await chatRepository.getOrCreateContactByJid(actualJid, pushName);
+      logger.info('Contact creation result for @lid', { contactId, actualJid, pushName });
+      
+      // Update primary_jid to @lid JID
+      await chatRepository.updatePrimaryJid(contactId, actualJid);
+      logger.info('Updated primary_jid for @lid contact', { contactId, actualJid });
+    }
+    
+    // Get full contact details for profile picture fetching
+    if (contactId) {
       try {
-        const contacts = await chatRepository.getContactsByPhoneNumbers([phoneNumber]);
+        const contacts = await chatRepository.getContactsByPhoneNumbers([phoneNumber].filter(Boolean));
         contact = contacts.find(c => c.id === contactId);
       } catch (error) {
         logger.error('Failed to get contact details', { error: error.message, contactId });
       }
-    } else {
-      logger.debug('Skipping contact creation for unsupported JID', { jid, type: jidInfo.type });
     }
 
     // Store message and get conversation_id for socket emission
+    // For broadcast messages, use the participant JID for conversation
+    const conversationJid = jidInfo.type === 'broadcast' ? actualJid : jid;
+    logger.info('Creating conversation for message', {
+      originalJid: jid,
+      conversationJid,
+      isBroadcast: jidInfo.type === 'broadcast',
+      actualJid
+    });
+    
     const conversationId = await chatRepository.insertMessage({
-      jid,
+      jid: conversationJid,
       waMessageId,
       fromMe: message.key.fromMe ? 1 : 0,
       text,
       timestamp,
       quotedMessageId: quotedId,
       quotedText,
-      rawMessage: JSON.stringify(message)
+      rawMessage: JSON.stringify(message),
+      // Add group information
+      isGroupMessage: isGroupMessage ? 1 : 0,
+      originalGroupJid: originalGroupJid || (jidInfo.type === 'broadcast' ? jid : null)
     });
 
     // Link contact to conversation if we have one
@@ -489,16 +619,40 @@ export const chatService = {
         message_timestamp: timestamp,
         quoted_message_id: quotedId,
         quoted_text: quotedText,
-        quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null
+        quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null,
+        // Add group information
+        is_group_message: isGroupMessage,
+        original_group_jid: originalGroupJid
       };
       
       logger.info('Emitting new-message to Socket.IO', { 
         conversationId, 
         waMessageId, 
+        isGroupMessage,
+        originalGroupJid,
         room: `conversation_${conversationId}` 
       });
       
       global.io.to(`conversation_${conversationId}`).emit('new-message', messageData);
+      
+      // Emit contact update for real-time contact list refresh
+      if (contactId) {
+        const contactUpdateData = {
+          contactId,
+          last_message_preview: text,
+          last_message_at: new Date().toISOString(),
+          unread_count: 1, // This should be calculated from actual unread count
+          conversation_id: conversationId
+        };
+        
+        logger.info('Emitting contact_update to Socket.IO', { 
+          contactId, 
+          conversationId,
+          messagePreview: text
+        });
+        
+        global.io.emit('contact_update', contactUpdateData);
+      }
     } else {
       logger.warn('Socket.IO not available or no conversationId', { 
         hasIo: !!global.io, 

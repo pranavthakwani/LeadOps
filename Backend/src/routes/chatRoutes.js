@@ -295,14 +295,18 @@ router.get('/contacts/:id/messages', async (req, res) => {
 router.get('/contacts/:id/conversations', async (req, res) => {
   try {
     const contactId = parseInt(req.params.id);
-    const conversations = await chatRepository.getConversationIdsByContactId(contactId);
+    const conversations = await chatRepository.getConversationsByContactId(contactId);
 
     res.json({
       success: true,
       data: conversations
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('❌ Error fetching conversations for contact:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch conversations for contact' 
+    });
   }
 });
 
@@ -381,6 +385,322 @@ router.post('/cleanup-duplicates', async (req, res) => {
     });
   } catch (err) {
     console.error('CLEANUP ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save contact with JID mapping (for unknown contacts)
+router.post('/contacts/save-with-jid', async (req, res) => {
+  try {
+    const { name, phone, jid } = req.body;
+
+    if (!name || !phone || !jid) {
+      return res.status(400).json({ error: 'Name, phone, and JID are required' });
+    }
+
+    // Create contact
+    const contactId = await chatRepository.createContact(name, phone);
+    
+    // Create or get conversation for JID
+    const conversationId = await chatRepository.getOrCreateConversation(jid);
+    
+    // Link contact to conversation
+    await chatRepository.linkContact(conversationId, contactId);
+    
+    // Update primary JID
+    await chatRepository.updatePrimaryJid(contactId, jid);
+
+    res.json({ 
+      success: true, 
+      contactId,
+      conversationId,
+      message: 'Contact saved successfully' 
+    });
+  } catch (err) {
+    console.error('SAVE CONTACT WITH JID ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Merge JID with existing contact
+router.post('/contacts/merge-jid', async (req, res) => {
+  try {
+    const { jid, contactId } = req.body;
+
+    if (!jid || !contactId) {
+      return res.status(400).json({ error: 'JID and contact ID are required' });
+    }
+
+    // Create or get conversation for JID
+    const conversationId = await chatRepository.getOrCreateConversation(jid);
+    
+    // Link existing contact to conversation and create JID mapping
+    const mapResult = await chatRepository.mapJidToContact(jid, contactId);
+    
+    // Update primary JID
+    await chatRepository.updatePrimaryJid(contactId, jid);
+
+    res.json({ 
+      success: true, 
+      conversationId: mapResult.conversationId || conversationId,
+      message: 'JID merged with contact successfully' 
+    });
+  } catch (err) {
+    console.error('MERGE JID ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new contact and merge with @lid JID
+router.post('/contacts/merge-lid-with-new', async (req, res) => {
+  try {
+    const { name, phone, lidJid } = req.body;
+
+    if (!name || !phone || !lidJid) {
+      return res.status(400).json({ error: 'Name, phone, and LID JID are required' });
+    }
+
+    // Normalize phone number
+    const normalizedPhone = chatRepository.normalizePhone(phone);
+    
+    // Create contact
+    const contactId = await chatRepository.createContact(name, normalizedPhone);
+    
+    // Generate WhatsApp JID from phone number
+    const whatsappJid = chatRepository.generateJid(normalizedPhone);
+    
+    // Create conversation for WhatsApp JID
+    const whatsappConversationId = await chatRepository.getOrCreateConversation(whatsappJid);
+    
+    // Link WhatsApp conversation to contact
+    await chatRepository.linkContact(whatsappConversationId, contactId);
+    
+    // Create or get conversation for @lid JID and map it to the contact
+    const lidConversationId = await chatRepository.getOrCreateConversation(lidJid);
+    const mapResult = await chatRepository.mapJidToContact(lidJid, contactId);
+    
+    // Update primary JID to @lid (since that's the original JID)
+    await chatRepository.updatePrimaryJid(contactId, lidJid);
+
+    res.json({ 
+      success: true, 
+      contactId,
+      whatsappConversationId,
+      lidConversationId: mapResult.conversationId || lidConversationId,
+      whatsappJid,
+      message: 'Contact created and merged successfully' 
+    });
+  } catch (err) {
+    console.error('MERGE LID WITH NEW ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Search contacts
+router.get('/contacts/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    
+    if (!q || q.trim().length === 0) {
+      return res.json({ contacts: [] });
+    }
+
+    const contacts = await chatRepository.searchContacts(q.trim());
+
+    res.json({ 
+      contacts: contacts 
+    });
+  } catch (err) {
+    console.error('SEARCH CONTACTS ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unmerge conversation from contact
+router.post('/conversations/:id/unmerge', async (req, res) => {
+  try {
+    const conversationId = parseInt(req.params.id);
+    const { newContactName } = req.body;
+
+    if (!newContactName) {
+      return res.status(400).json({ error: 'New contact name is required' });
+    }
+
+    // Get the conversation to unmerge
+    const conversation = await chatRepository.getConversationById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    if (!conversation.contact_id) {
+      return res.status(400).json({ error: 'Conversation is not merged with any contact' });
+    }
+
+    // Extract phone number from JID
+    const phoneNumber = conversation.jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '');
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ error: 'Cannot extract phone number from JID' });
+    }
+
+    // Create new contact
+    const newContactId = await chatRepository.createContact(newContactName, phoneNumber);
+    
+    // Update the conversation to link to the new contact
+    await chatRepository.linkContact(conversationId, newContactId);
+    
+    // Update primary JID for the new contact
+    await chatRepository.updatePrimaryJid(newContactId, conversation.jid);
+
+    res.json({ 
+      success: true, 
+      message: 'Conversation unmerged successfully',
+      newContactId,
+      conversationId
+    });
+  } catch (err) {
+    console.error('UNMERGE CONVERSATION ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get main participant for @g.us conversations
+router.get('/conversations/:id/main-participant', async (req, res) => {
+  try {
+    const conversationId = req.params.id;
+    
+    const pool = await getSQLPool();
+    
+    // Get the conversation details
+    const conversation = await pool.request()
+      .input('conversationId', sql.Int, conversationId)
+      .query(`
+        SELECT c.jid, c.contact_id 
+        FROM conversations c 
+        WHERE c.id = @conversationId
+      `);
+    
+    if (conversation.recordset.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    const conv = conversation.recordset[0];
+    
+    // If it's not a @g.us conversation, return itself
+    if (!conv.jid.endsWith('@g.us')) {
+      return res.json({
+        jid: conv.jid,
+        contact_id: conv.contact_id
+      });
+    }
+    
+    // Find the main participant (WhatsApp JID or @lid) linked to this contact
+    const mainParticipant = await pool.request()
+      .input('contactId', sql.Int, conv.contact_id)
+      .input('gusJid', sql.NVarChar, conv.jid)
+      .query(`
+        SELECT c.id, c.jid, c.contact_id, co.display_name, co.phone_number
+        FROM conversations c
+        LEFT JOIN contacts co ON c.contact_id = co.id
+        WHERE c.contact_id = @contactId 
+        AND c.jid != @gusJid
+        AND (c.jid LIKE '%@s.whatsapp.net' OR c.jid LIKE '%@lid')
+        ORDER BY 
+          CASE 
+            WHEN c.jid LIKE '%@lid' THEN 1
+            WHEN c.jid LIKE '%@s.whatsapp.net' THEN 2
+            ELSE 3
+          END
+        LIMIT 1
+      `);
+    
+    if (mainParticipant.recordset.length > 0) {
+      const participant = mainParticipant.recordset[0];
+      return res.json({
+        id: participant.id,
+        jid: participant.jid,
+        contact_id: participant.contact_id,
+        display_name: participant.display_name,
+        phone_number: participant.phone_number
+      });
+    } else {
+      // If no main participant found, return the @g.us itself
+      return res.json({
+        jid: conv.jid,
+        contact_id: conv.contact_id
+      });
+    }
+    
+  } catch (err) {
+    console.error('GET MAIN PARTICIPANT ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Map a JID to an existing contact
+router.post('/jid-map', async (req, res) => {
+  try {
+    const { jid, contactId } = req.body;
+
+    if (!jid || !contactId) {
+      return res.status(400).json({ error: 'JID and contactId are required' });
+    }
+
+    // Verify contact exists
+    const contact = await chatRepository.getContactById(contactId);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    // Map the JID to the contact
+    await chatRepository.mapJidToContact(jid, contactId);
+
+    res.json({ 
+      success: true, 
+      message: `JID ${jid} mapped to contact ${contactId}`,
+      contact: {
+        id: contact.id,
+        display_name: contact.display_name,
+        phone_number: contact.phone_number
+      }
+    });
+  } catch (err) {
+    console.error('JID MAP ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get contact by JID (checking both primary_jid and jid_mappings)
+router.get('/jid-contact/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+    
+    if (!jid) {
+      return res.status(400).json({ error: 'JID is required' });
+    }
+
+    const contact = await chatRepository.getContactByJid(decodeURIComponent(jid));
+
+    if (!contact) {
+      return res.json({ 
+        found: false,
+        message: 'No contact found for this JID'
+      });
+    }
+
+    res.json({
+      found: true,
+      contact: {
+        id: contact.id,
+        display_name: contact.display_name,
+        phone_number: contact.phone_number,
+        primary_jid: contact.primary_jid,
+        profile_pic_url: contact.profile_pic_url,
+        is_auto_generated: contact.is_auto_generated
+      }
+    });
+  } catch (err) {
+    console.error('GET JID CONTACT ERROR:', err);
     res.status(500).json({ error: err.message });
   }
 });

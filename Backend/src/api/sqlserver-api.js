@@ -28,31 +28,47 @@ export const getMessages = async (type = null) => {
   try {
     let query = '';
     
+    // Common WHERE clause to exclude mapped @lid conversations
+    // We don't want to show messages from @lid JIDs that have been mapped to contacts
+    // since those messages now appear under the merged contact
+    const excludeMappedLidClause = `
+      AND NOT (
+        chat_id LIKE '%@lid' 
+        AND EXISTS (
+          SELECT 1 FROM jid_mappings jm 
+          WHERE jm.jid = chat_id
+        )
+      )
+    `;
+    
     if (!type || type === 'all') {
       query = `
         SELECT 'lead' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
                colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
                confidence, raw_message, created_at
         FROM dealer_leads
+        WHERE 1=1 ${excludeMappedLidClause}
         UNION ALL
         SELECT 'offering' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
                colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
                confidence, raw_message, created_at
         FROM distributor_offerings
+        WHERE 1=1 ${excludeMappedLidClause}
         UNION ALL
         SELECT 'ignored' as type, id, sender, chat_id, chat_type, null as brand, null as model, null as variant, 
                null as ram, null as storage, null as colors, null as quantity, null as quantity_min, null as quantity_max, 
                null as price, null as price_min, null as price_max, null as condition, null as gst, null as dispatch, 
                confidence, raw_message, created_at
         FROM ignored_messages
+        WHERE 1=1 ${excludeMappedLidClause}
         ORDER BY created_at DESC
       `;
     } else if (type === 'lead') {
-      query = 'SELECT * FROM dealer_leads ORDER BY created_at DESC';
+      query = `SELECT * FROM dealer_leads WHERE 1=1 ${excludeMappedLidClause} ORDER BY created_at DESC`;
     } else if (type === 'offering') {
-      query = 'SELECT * FROM distributor_offerings ORDER BY created_at DESC';
+      query = `SELECT * FROM distributor_offerings WHERE 1=1 ${excludeMappedLidClause} ORDER BY created_at DESC`;
     } else if (type === 'ignored') {
-      query = 'SELECT * FROM ignored_messages ORDER BY created_at DESC';
+      query = `SELECT * FROM ignored_messages WHERE 1=1 ${excludeMappedLidClause} ORDER BY created_at DESC`;
     }
     
     return await executeQuery(query);

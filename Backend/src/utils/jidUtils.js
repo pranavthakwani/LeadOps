@@ -33,11 +33,26 @@ export function parseJid(jid) {
     };
   }
 
+  if (jid.endsWith('@lid')) {
+    return {
+      type: 'lid',
+      phone: null,
+      jid
+    };
+  }
+
   return {
     type: 'unknown',
     phone: null,
     jid
   };
+}
+
+/**
+ * Check if JID is a LID (business account)
+ */
+export function isLidJid(jid) {
+  return parseJid(jid).type === 'lid';
 }
 
 /**

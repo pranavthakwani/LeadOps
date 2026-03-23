@@ -24,6 +24,16 @@ export interface Conversation {
   last_message_at: number;
   unread_count: number;
   contact_id?: number;
+  source_jid?: string;
+  // New fields for resolved contact info
+  resolved_contact_id?: number;  // Contact ID from jid_mappings lookup
+  contact_display_name?: string;
+  contact_phone?: string;
+  contact_is_auto_generated?: boolean;
+  contact_profile_pic?: string;
+  jid_type?: 'whatsapp' | 'mapped_lid' | 'unmapped_lid' | 'group' | 'broadcast' | 'unknown';
+  resolved_display_name?: string;
+  // Legacy fields for backward compatibility
   display_name?: string;
   phone_number?: string;
   profile_pic_url?: string;
@@ -33,6 +43,7 @@ export interface Contact {
   id: number;
   display_name: string;
   phone_number: string;
+  primary_jid: string;
   is_auto_generated?: boolean;
   profile_pic_url?: string;
   conversation_id: number | null;
@@ -324,6 +335,110 @@ export const chatApi = {
     } catch (error) {
       console.error('Error merging contacts:', error);
       return false;
+    }
+  },
+
+  // Save contact with JID mapping (for unknown contacts)
+  async saveContactWithJid(name: string, phone: string, jid: string) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/contacts/save-with-jid`, {
+        name,
+        phone,
+        jid
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error saving contact with JID:', error);
+      return null;
+    }
+  },
+
+  // Merge JID with existing contact
+  async mergeJidWithContact(jid: string, contactId: number) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/contacts/merge-jid`, {
+        jid,
+        contactId
+      });
+      return response.data.success || false;
+    } catch (error) {
+      console.error('Error merging JID with contact:', error);
+      return false;
+    }
+  },
+
+  // Create new contact and merge with @lid JID
+  async mergeLidWithNewContact(name: string, phone: string, lidJid: string) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/contacts/merge-lid-with-new`, {
+        name,
+        phone,
+        lidJid
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error merging LID with new contact:', error);
+      return null;
+    }
+  },
+
+  // Search contacts
+  async searchContacts(query: string) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/contacts/search?q=${encodeURIComponent(query)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error searching contacts:', error);
+      return { contacts: [] };
+    }
+  },
+
+  // Unmerge conversation from contact
+  async unmergeConversation(conversationId: number, newContactName: string) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/conversations/${conversationId}/unmerge`, {
+        newContactName
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error unmerging conversation:', error);
+      throw error;
+    }
+  },
+
+  // Get main participant for @g.us conversations
+  async getMainParticipant(conversationId: number) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/conversations/${conversationId}/main-participant`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching main participant:', error);
+      return null;
+    }
+  },
+
+  // Map a JID to an existing contact
+  async mapJidToContact(jid: string, contactId: number) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/jid-map`, {
+        jid,
+        contactId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error mapping JID to contact:', error);
+      return null;
+    }
+  },
+
+  // Get contact by JID
+  async getContactByJid(jid: string) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/jid-contact/${encodeURIComponent(jid)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching contact by JID:', error);
+      return { found: false };
     }
   }
 };

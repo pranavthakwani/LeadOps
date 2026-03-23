@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pipeline - Phone Data Extraction Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-section, .output-section {
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #155724;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .test-inputs {
+            margin: 20px 0;
+        }
+        .test-input {
+            background: #e9ecef;
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-family: monospace;
+            cursor: pointer;
+        }
+        .test-input:hover {
+            background: #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI Pipeline - Phone Data Extraction Test</h1>
+        
+        <div class="input-section">
+            <h3>Input Text</h3>
+            <textarea id="input" placeholder="Paste raw phone data here...&#10;Example: V50e 8/128 -4-19350"></textarea>
+            <button onclick="processText()" id="processBtn">🔄 Process</button>
+        </div>
+
+        <div class="test-inputs">
+            <h3>Test Inputs (Click to use)</h3>
+            <div class="test-input" onclick="setInput('V50e 8/128 -4-19350')">V50e 8/128 -4-19350</div>
+            <div class="test-input" onclick="setInput('V50e 8/256-4-20850')">V50e 8/256-4-20850</div>
+            <div class="test-input" onclick="setInput('V60 12/256-17-29350')">V60 12/256-17-29350</div>
+            <div class="test-input" onclick="setInput('X200fe 12/256-41-39500')">X200fe 12/256-41-39500</div>
+        </div>
+
+        <div class="output-section">
+            <h3>Output (JSON)</h3>
+            <pre id="output">Click "Process" to extract phone data...</pre>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function processText() {
+            const input = document.getElementById('input').value.trim();
+            const output = document.getElementById('output');
+            const processBtn = document.getElementById('processBtn');
+            const status = document.getElementById('status');
+            
+            if (!input) {
+                showError('Please enter some text to process');
+                return;
+            }
+            
+            processBtn.disabled = true;
+            processBtn.textContent = '⏳ Processing...';
+            status.innerHTML = '';
+            
+            try {
+                const response = await fetch('/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: input })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                    showSuccess(`Successfully extracted ${result.items.length} item(s)`);
+                } else {
+                    throw new Error(result.error || 'Processing failed');
+                }
+            } catch (error) {
+                showError('Error: ' + error.message);
+                output.textContent = '';
+            } finally {
+                processBtn.disabled = false;
+                processBtn.textContent = '🔄 Process';
+            }
+        }
+        
+        function setInput(text) {
+            document.getElementById('input').value = text;
+        }
+        
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.innerHTML = `<div class="error">${message}</div>`;
+        }
+        
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.innerHTML = `<div class="success">${message}</div>`;
+        }
+        
+        // Allow Enter key to process
+        document.getElementById('input').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                processText();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -251,17 +251,15 @@ class BaileysService {
           // Store ALL messages (both incoming and outgoing) for complete chat history
           if (!message.key.fromMe) {
             logger.info('Storing incoming message', { messageId: message.key.id });
-            await chatService.storeMessageWithContact(message);
-            await chatService.handleIncomingMessage(message);
+            await chatService.storeMessageWithContact(message, this.sock);
+            await chatService.handleIncomingMessage(message); // Business filter + AI pipeline
           } else {
             logger.info('Storing outgoing message from phone/device', { 
               messageId: message.key.id,
               fromMe: message.key.fromMe
             });
-            await chatService.storeMessageWithContact(message);
-            
-            // Process outgoing messages through pipeline to ensure conversation visibility
-            await chatService.handleOutgoingMessage(message);
+            await chatService.storeMessageWithContact(message, this.sock);
+            // Outgoing messages are ONLY stored, no business filter or AI processing
           }
         } catch (error) {
           logger.error('Message processing failed', {
@@ -514,21 +512,27 @@ class BaileysService {
       const isGroup = sender.endsWith('@g.us');
       const isBroadcast = sender.endsWith('@broadcast');
 
-      // Get participant info for groups
+      // Get participant info for groups and broadcasts
       let participant = messageData.key.participant;
-      if (isGroup && participant) {
-        // In groups, the actual sender is the participant
+      if ((isGroup || isBroadcast) && participant) {
+        // In groups/broadcasts, the actual sender is the participant
         participant = participant;
       } else {
         // In individual chats, sender is the remote JID
         participant = sender;
       }
 
+      // For groups/broadcasts, use participant JID as chat_id so messages appear under the actual contact
+      const actualChatId = (isGroup || isBroadcast) && messageData.key.participant 
+        ? messageData.key.participant 
+        : chatId;
+
       const payload = {
         body: {
           sender: participant,
           sender_name: messageData.pushName || 'Unknown',
-          chat_id: chatId,
+          chat_id: actualChatId,  // Use participant JID for groups/broadcasts
+          original_chat_id: chatId, // Store original group/broadcast JID for reference
           chat_type: isGroup
             ? 'group'
             : isBroadcast

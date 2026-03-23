@@ -97,8 +97,20 @@ export const chatRepository = {
         return conversation; // Return conversation_id for socket emission
       }
 
-      // 1️⃣ Get or create conversation
+      // 1️⃣ Get or create conversation with real JID (participant)
       const conversationId = await this.getOrCreateConversation(data.jid);
+      
+      // If source_jid is provided, update the conversation to store it
+      if (data.sourceJid && data.sourceJid !== data.jid) {
+        await pool.request()
+          .input('conversationId', sql.Int, conversationId)
+          .input('sourceJid', sql.NVarChar, data.sourceJid)
+          .query(`
+            UPDATE conversations 
+            SET source_jid = @sourceJid 
+            WHERE id = @conversationId
+          `);
+      }
 
       // 2️⃣ Insert the message with full raw message
       const request = pool.request()
@@ -246,6 +258,23 @@ export const chatRepository = {
   async linkContact(conversationId, contactId) {
     const pool = await getSQLPool();
 
+    // First, get the conversation JID
+    const convResult = await pool.request()
+      .input('conversationId', sql.Int, conversationId)
+      .query(`
+        SELECT jid FROM conversations 
+        WHERE id = @conversationId
+      `);
+
+    if (convResult.recordset.length === 0) {
+      console.log('Conversation not found for linking:', conversationId);
+      return;
+    }
+
+    const jid = convResult.recordset[0].jid;
+    console.log('Linking conversation', conversationId, 'with JID', jid, 'to contact', contactId);
+
+    // Update the conversation with the contact
     await pool.request()
       .input('conversationId', sql.Int, conversationId)
       .input('contactId', sql.Int, contactId)
@@ -254,6 +283,33 @@ export const chatRepository = {
         SET contact_id = @contactId
         WHERE id = @conversationId
       `);
+
+    // If this is a @lid JID, also create a jid_mapping entry
+    if (jid.endsWith('@lid')) {
+      // Check if mapping already exists
+      const existingMapping = await pool.request()
+        .input('jid', sql.NVarChar, jid)
+        .input('contactId', sql.Int, contactId)
+        .query(`
+          SELECT id FROM jid_mappings 
+          WHERE jid = @jid AND contact_id = @contactId
+        `);
+
+      if (existingMapping.recordset.length === 0) {
+        // Create mapping for @lid JIDs
+        await pool.request()
+          .input('jid', sql.NVarChar, jid)
+          .input('contactId', sql.Int, contactId)
+          .query(`
+            INSERT INTO jid_mappings (jid, contact_id, created_at)
+            VALUES (@jid, @contactId, GETUTCDATE())
+          `);
+        
+        logger.info(`Created JID mapping for @lid: ${jid} -> contact ${contactId}`);
+      }
+    }
+
+    console.log('Successfully linked conversation', conversationId, 'to contact', contactId);
   },
 
   async getOrCreateContactByPhone(phone, name = null) {
@@ -319,6 +375,184 @@ export const chatRepository = {
     return inserted.recordset[0].id;
   },
 
+  // Get or create contact by JID (for @lid business accounts)
+  async getOrCreateContactByJid(jid, name = null) {
+    const pool = await getSQLPool();
+
+    if (!jid || jid.trim() === '') {
+      throw new Error('JID is required');
+    }
+
+    console.log('Looking for JID:', jid);
+
+    // First check if this JID is already mapped to a contact via jid_mappings
+    const mappedContact = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT c.id, c.display_name, c.is_auto_generated, c.phone_number
+        FROM jid_mappings jm
+        JOIN contacts c ON jm.contact_id = c.id
+        WHERE jm.jid = @jid
+      `);
+
+    if (mappedContact.recordset.length > 0) {
+      const contact = mappedContact.recordset[0];
+      console.log('Found mapped contact by JID:', contact.id, 'with name:', contact.display_name);
+      
+      // Update contact name if needed (only if auto-generated or empty)
+      if (name && name !== 'Unknown' && name !== contact.display_name) {
+        const shouldUpdate = 
+          (contact.is_auto_generated === 1) || 
+          (!contact.display_name || contact.display_name === 'Unknown' || contact.display_name === '');
+          
+        if (shouldUpdate) {
+          console.log('Updating mapped contact name:', contact.id, 'from', contact.display_name, 'to', name);
+          await pool.request()
+            .input('id', sql.Int, contact.id)
+            .input('name', sql.NVarChar, name)
+            .query(`
+              UPDATE contacts
+                SET display_name = @name
+                WHERE id = @id
+          `);
+        }
+      }
+      
+      return contact.id;
+    }
+
+    // Check primary_jid directly on contacts
+    const existing = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT id, display_name, is_auto_generated
+        FROM contacts 
+        WHERE primary_jid = @jid
+      `);
+
+    if (existing.recordset.length > 0) {
+      const contact = existing.recordset[0];
+      console.log('Found existing contact by JID:', contact.id);
+
+      // Update contact if new name is available
+      if (name && name !== 'Unknown' && name !== contact.display_name) {
+        const shouldUpdate = 
+          (contact.is_auto_generated === 1) || 
+          (!contact.display_name || contact.display_name === 'Unknown' || contact.display_name === '');
+          
+        if (shouldUpdate) {
+          console.log('Updating contact name by JID:', contact.id, 'from', contact.display_name, 'to', name);
+          await pool.request()
+            .input('id', sql.Int, contact.id)
+            .input('name', sql.NVarChar, name)
+            .query(`
+              UPDATE contacts
+                SET display_name = @name
+                WHERE id = @id
+          `);
+        }
+      }
+
+      return contact.id;
+    }
+
+    // Create new contact with is_auto_generated = 1 for auto-created contacts
+    const inserted = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .input('name', sql.NVarChar, name || 'Unknown Business')
+      .input('isAutoGenerated', sql.Bit, 1)
+      .query(`
+        INSERT INTO contacts (display_name, primary_jid, is_auto_generated)
+          OUTPUT INSERTED.id
+          VALUES (@name, @jid, @isAutoGenerated)
+      `);
+
+    console.log('Created new auto-generated contact by JID:', inserted.recordset[0].id);
+    return inserted.recordset[0].id;
+  },
+
+  // Map a JID to an existing contact (for merging @lid with existing contacts)
+  async mapJidToContact(jid, contactId) {
+    const pool = await getSQLPool();
+
+    // Check if mapping already exists
+    const existing = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .input('contactId', sql.Int, contactId)
+      .query(`
+        SELECT id FROM jid_mappings 
+        WHERE jid = @jid AND contact_id = @contactId
+      `);
+
+    if (existing.recordset.length === 0) {
+      // Create new mapping
+      await pool.request()
+        .input('jid', sql.NVarChar, jid)
+        .input('contactId', sql.Int, contactId)
+        .query(`
+          INSERT INTO jid_mappings (jid, contact_id, created_at)
+          VALUES (@jid, @contactId, GETUTCDATE())
+        `);
+      
+      logger.info(`Mapped JID ${jid} to contact ${contactId}`);
+    }
+
+    // Also link any conversations with this JID to the contact
+    await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .input('contactId', sql.Int, contactId)
+      .query(`
+        UPDATE conversations
+        SET contact_id = @contactId
+        WHERE jid = @jid AND (contact_id IS NULL OR contact_id != @contactId)
+      `);
+
+    // Get the conversation ID for the mapped JID to return
+    const convResult = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT id FROM conversations 
+        WHERE jid = @jid
+      `);
+
+    const conversationId = convResult.recordset.length > 0 ? convResult.recordset[0].id : null;
+    
+    return {
+      success: true,
+      conversationId: conversationId
+    };
+  },
+
+  // Get contact by JID (checking both primary_jid and jid_mappings)
+  async getContactByJid(jid) {
+    const pool = await getSQLPool();
+
+    // First check jid_mappings
+    const mappedResult = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT c.*
+        FROM jid_mappings jm
+        JOIN contacts c ON jm.contact_id = c.id
+        WHERE jm.jid = @jid
+      `);
+
+    if (mappedResult.recordset.length > 0) {
+      return mappedResult.recordset[0];
+    }
+
+    // Then check primary_jid
+    const primaryResult = await pool.request()
+      .input('jid', sql.NVarChar, jid)
+      .query(`
+        SELECT *
+        FROM contacts
+        WHERE primary_jid = @jid
+      `);
+
+    return primaryResult.recordset[0] || null;
+  },
+
   // Update primary_jid for a contact (used when @lid JID is detected)
   async updatePrimaryJid(contactId, jid) {
     const pool = await getSQLPool();
@@ -347,12 +581,48 @@ export const chatRepository = {
             c.last_message_at,
             c.unread_count,
             c.contact_id,
-            ct.display_name,
-            ct.phone_number,
-            ct.profile_pic_url
+            c.source_jid,
+            -- Get contact info from either direct contact_id or jid_mappings
+            COALESCE(ct_direct.display_name, ct_mapped.display_name) as contact_display_name,
+            COALESCE(ct_direct.phone_number, ct_mapped.phone_number) as contact_phone,
+            COALESCE(ct_direct.is_auto_generated, ct_mapped.is_auto_generated) as contact_is_auto_generated,
+            COALESCE(ct_direct.profile_pic_url, ct_mapped.profile_pic_url) as contact_profile_pic,
+            COALESCE(ct_direct.id, ct_mapped.id) as resolved_contact_id,
+            -- Determine if this is a mapped @lid or unmapped
+            CASE 
+              WHEN c.jid LIKE '%@lid' AND (ct_direct.id IS NOT NULL OR ct_mapped.id IS NOT NULL) THEN 'mapped_lid'
+              WHEN c.jid LIKE '%@lid' AND ct_direct.id IS NULL AND ct_mapped.id IS NULL THEN 'unmapped_lid'
+              WHEN c.jid LIKE '%@s.whatsapp.net' THEN 'whatsapp'
+              WHEN c.jid LIKE '%@g.us' THEN 'group'
+              WHEN c.jid LIKE '%@broadcast' THEN 'broadcast'
+              ELSE 'unknown'
+            END as jid_type,
+            -- Resolved display name priority: mapped contact name > direct contact name > formatted phone > raw JID
+            COALESCE(
+              ct_mapped.display_name,
+              ct_direct.display_name,
+              CASE 
+                WHEN c.jid LIKE '%@s.whatsapp.net' THEN 
+                  -- Format phone number from JID
+                  CASE 
+                    WHEN LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) > 10 
+                    THEN '+' + LEFT(REPLACE(c.jid, '@s.whatsapp.net', ''), LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) - 10) + ' ' + 
+                         SUBSTRING(REPLACE(c.jid, '@s.whatsapp.net', ''), LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) - 9, 5) + '-' + 
+                         RIGHT(REPLACE(c.jid, '@s.whatsapp.net', ''), 4)
+                    ELSE REPLACE(c.jid, '@s.whatsapp.net', '')
+                  END
+                ELSE c.jid
+              END
+            ) as resolved_display_name
         FROM conversations c
-        LEFT JOIN contacts ct 
-            ON c.contact_id = ct.id
+        -- First try direct contact link
+        LEFT JOIN contacts ct_direct
+            ON c.contact_id = ct_direct.id
+        -- Then try jid_mappings for @lid and other JIDs
+        LEFT JOIN jid_mappings jm
+            ON c.jid = jm.jid
+        LEFT JOIN contacts ct_mapped
+            ON jm.contact_id = ct_mapped.id
         ORDER BY c.last_message_at DESC
       `);
 
@@ -743,6 +1013,11 @@ export const chatRepository = {
           ON cm.quoted_message_id = q.wa_message_id
         JOIN conversations c ON cm.conversation_id = c.id
         WHERE c.contact_id = @contactId
+           OR c.jid IN (
+             SELECT jm.jid 
+             FROM jid_mappings jm 
+             WHERE jm.contact_id = @contactId
+           )
         ORDER BY cm.message_timestamp ASC, cm.id ASC
       `);
 
@@ -791,6 +1066,79 @@ export const chatRepository = {
         SELECT id, jid, type
         FROM conversations 
         WHERE contact_id = @contactId
+           OR jid IN (
+             SELECT jm.jid 
+             FROM jid_mappings jm 
+             WHERE jm.contact_id = @contactId
+           )
+      `);
+
+    return result.recordset;
+  },
+
+  // Get conversations by contact ID (includes jid_mappings)
+  async getConversationsByContactId(contactId) {
+    const pool = await getSQLPool();
+
+    const result = await pool.request()
+      .input('contactId', sql.Int, contactId)
+      .query(`
+        SELECT 
+          c.id,
+          c.jid,
+          c.type,
+          c.last_message_at,
+          c.unread_count,
+          c.contact_id,
+          c.source_jid,
+          -- Get contact info from either direct contact_id or jid_mappings
+          COALESCE(ct_direct.display_name, ct_mapped.display_name) as contact_display_name,
+          COALESCE(ct_direct.phone_number, ct_mapped.phone_number) as contact_phone,
+          COALESCE(ct_direct.is_auto_generated, ct_mapped.is_auto_generated) as contact_is_auto_generated,
+          COALESCE(ct_direct.profile_pic_url, ct_mapped.profile_pic_url) as contact_profile_pic,
+          COALESCE(ct_direct.id, ct_mapped.id) as resolved_contact_id,
+          -- Determine if this is a mapped @lid or unmapped
+          CASE 
+            WHEN c.jid LIKE '%@lid' AND (ct_direct.id IS NOT NULL OR ct_mapped.id IS NOT NULL) THEN 'mapped_lid'
+            WHEN c.jid LIKE '%@lid' AND ct_direct.id IS NULL AND ct_mapped.id IS NULL THEN 'unmapped_lid'
+            WHEN c.jid LIKE '%@s.whatsapp.net' THEN 'whatsapp'
+            WHEN c.jid LIKE '%@g.us' THEN 'group'
+            WHEN c.jid LIKE '%@broadcast' THEN 'broadcast'
+            ELSE 'unknown'
+          END as jid_type,
+          -- Resolved display name priority: mapped contact name > direct contact name > formatted phone > raw JID
+          COALESCE(
+            ct_mapped.display_name,
+            ct_direct.display_name,
+            CASE 
+              WHEN c.jid LIKE '%@s.whatsapp.net' THEN 
+                -- Format phone number from JID
+                CASE 
+                  WHEN LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) > 10 
+                  THEN '+' + LEFT(REPLACE(c.jid, '@s.whatsapp.net', ''), LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) - 10) + ' ' + 
+                       SUBSTRING(REPLACE(c.jid, '@s.whatsapp.net', ''), LEN(REPLACE(c.jid, '@s.whatsapp.net', '')) - 9, 5) + '-' + 
+                       RIGHT(REPLACE(c.jid, '@s.whatsapp.net', ''), 4)
+                  ELSE REPLACE(c.jid, '@s.whatsapp.net', '')
+                END
+              ELSE c.jid
+            END
+          ) as resolved_display_name
+        FROM conversations c
+        -- First try direct contact link
+        LEFT JOIN contacts ct_direct
+            ON c.contact_id = ct_direct.id
+        -- Then try jid_mappings for @lid and other JIDs
+        LEFT JOIN jid_mappings jm
+            ON c.jid = jm.jid
+        LEFT JOIN contacts ct_mapped
+            ON jm.contact_id = ct_mapped.id
+        WHERE c.contact_id = @contactId
+           OR c.jid IN (
+             SELECT jm_inner.jid 
+             FROM jid_mappings jm_inner 
+             WHERE jm_inner.contact_id = @contactId
+           )
+        ORDER BY c.last_message_at DESC
       `);
 
     return result.recordset;
@@ -879,5 +1227,25 @@ export const chatRepository = {
       `);
 
     logger.info(`Profile picture updated for contact ${contactId}`, { url: url ? 'yes' : 'no' });
+    return true;
+  },
+
+  async searchContacts(query) {
+    return safeQuery(async () => {
+      const pool = await getSQLPool();
+      
+      const result = await pool.request()
+        .input('searchQuery', sql.NVarChar, `%${query.trim()}%`)
+        .query(`
+          SELECT id, display_name, phone_number, primary_jid
+          FROM contacts 
+          WHERE display_name LIKE @searchQuery 
+             OR phone_number LIKE @searchQuery
+          ORDER BY display_name
+          OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+        `);
+
+      return result.recordset;
+    }, 'search contacts');
   }
 };
