@@ -49,6 +49,10 @@ export const ContactsPage: React.FC = () => {
   // Helper function to format contact display name
   const formatContactDisplayName = (contact: Contact) => {
     if (contact.display_name && contact.display_name !== 'Unknown' && contact.display_name !== null) {
+      // Add ~ prefix for auto-generated contacts (from pushName)
+      if (contact.is_auto_generated) {
+        return `~${contact.display_name}`;
+      }
       return contact.display_name;
     }
     // For @lid contacts, show the JID
@@ -71,14 +75,42 @@ export const ContactsPage: React.FC = () => {
   };
 
   // Helper function to check if contact is @lid
-  const isLidContact = (contact: Contact) => {
-    return contact.primary_jid && contact.primary_jid.endsWith('@lid');
-  };
+  // Note: This function is no longer needed for business badge logic
 
   // Handle merge completion
   const handleMergeComplete = async () => {
     await loadContacts(1, false);
     setUnifiedModalOpen(false);
+  };
+
+  // Handle contact updates from ChatInterface (new messages, etc.)
+  const handleContactUpdate = async (data: any) => {
+    console.log('🔄 Updating contact due to new message:', data);
+    
+    // Update the specific contact without refreshing the entire list
+    setContacts(prev => {
+      const updatedContacts = prev.map(contact => {
+        if (contact.id === data.contactId) {
+          return {
+            ...contact,
+            last_message_preview: data.messagePreview || data.last_message_preview,
+            last_message_at: new Date().toISOString(), // Update timestamp to move to top
+            total_unread_count: (contact.total_unread_count || 0) + 1,
+            conversation_id: data.conversation_id
+          };
+        }
+        return contact;
+      });
+      
+      // Move the updated contact to the top
+      const updatedContact = updatedContacts.find(c => c.id === data.contactId);
+      if (updatedContact) {
+        const otherContacts = updatedContacts.filter(c => c.id !== data.contactId);
+        return [updatedContact, ...otherContacts];
+      }
+      
+      return updatedContacts;
+    });
   };
 
   useEffect(() => {
@@ -374,11 +406,7 @@ export const ContactsPage: React.FC = () => {
                           <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                         </button>
                       )}
-                      {isLidContact(contact) && (
-                        <span className="bg-orange-500 text-white text-xs rounded px-2 py-1">
-                          Business
-                        </span>
-                      )}
+                      {/* Removed automatic Business badge for LID contacts */}
                       {contact.total_unread_count > 0 && (
                         <span className="bg-[#00a884] text-white text-xs rounded-full px-2 py-1">
                           {contact.total_unread_count}
@@ -432,6 +460,7 @@ export const ContactsPage: React.FC = () => {
             conversationId={selectedContact.conversation_id || undefined}
             contactId={selectedContact.id}
             allConversationIds={selectedContact.all_conversation_ids}
+            onContactUpdate={handleContactUpdate}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">

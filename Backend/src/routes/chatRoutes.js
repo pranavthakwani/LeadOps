@@ -331,6 +331,9 @@ router.post('/contacts/:id/merge', async (req, res) => {
     // Get all conversations from source contact
     const sourceConversations = await chatRepository.getConversationIdsByContactId(sourceContactId);
     
+    // Transfer JID mappings from source to target contact
+    await chatRepository.transferJidMappings(sourceContactId, targetContactId);
+    
     // Update all conversations to point to target contact
     for (const conv of sourceConversations) {
       await chatRepository.linkContact(conv.id, targetContactId);
@@ -594,7 +597,63 @@ router.get('/conversations/:id/main-participant', async (req, res) => {
       });
     }
     
-    // Find the main participant (WhatsApp JID or @lid) linked to this contact
+    // For @g.us conversations, get the latest message to extract participant info
+    const latestMessage = await pool.request()
+      .input('conversationId', sql.Int, conversationId)
+      .query(`
+        SELECT TOP 1 cm.raw_message, cm.jid as participant_jid
+        FROM chat_messages cm
+        WHERE cm.conversation_id = @conversationId
+        AND cm.raw_message IS NOT NULL
+        AND cm.from_me = 0
+        ORDER BY cm.message_timestamp DESC
+      `);
+    
+    if (latestMessage.recordset.length > 0) {
+      const message = latestMessage.recordset[0];
+      let pushName = null;
+      let participantJid = message.participant_jid;
+      
+      try {
+        // Parse the raw WhatsApp message to extract pushName
+        const rawMessage = JSON.parse(message.raw_message);
+        pushName = rawMessage.pushName || rawMessage.senderName || null;
+        
+        // If participant JID is available, try to get contact info
+        let contactInfo = null;
+        if (participantJid) {
+          const contactQuery = await pool.request()
+            .input('jid', sql.NVarChar, participantJid)
+            .query(`
+              SELECT c.id, c.display_name, c.phone_number, c.is_auto_generated
+              FROM contacts c
+              WHERE c.primary_jid = @jid
+              OR c.id IN (
+                SELECT jm.contact_id FROM jid_mappings jm WHERE jm.jid = @jid
+              )
+            `);
+          
+          if (contactQuery.recordset.length > 0) {
+            contactInfo = contactQuery.recordset[0];
+          }
+        }
+        
+        return res.json({
+          id: conv.id,
+          jid: participantJid || conv.jid,
+          contact_id: contactInfo?.id || conv.contact_id,
+          display_name: contactInfo?.display_name || pushName || 'Unknown',
+          phone_number: contactInfo?.phone_number,
+          is_auto_generated: contactInfo?.is_auto_generated || 0,
+          push_name: pushName
+        });
+        
+      } catch (parseError) {
+        console.error('Error parsing raw message:', parseError);
+      }
+    }
+    
+    // Fallback: Find the main participant (WhatsApp JID or @lid) linked to this contact
     const mainParticipant = await pool.request()
       .input('contactId', sql.Int, conv.contact_id)
       .input('gusJid', sql.NVarChar, conv.jid)
@@ -620,7 +679,7 @@ router.get('/conversations/:id/main-participant', async (req, res) => {
         id: participant.id,
         jid: participant.jid,
         contact_id: participant.contact_id,
-        display_name: participant.display_name,
+        display_name: participant.display_name || 'Unknown',
         phone_number: participant.phone_number
       });
     } else {

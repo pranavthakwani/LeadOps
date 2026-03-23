@@ -24,18 +24,42 @@ const executeQuery = async (query, params = []) => {
   } 
 };
 
+// Cache for mapped @lid JIDs to reduce repeated queries
+let mappedLidCache = {
+  data: [],
+  lastUpdated: 0,
+  cacheTimeoutMs: 60000 // 60 seconds cache (increased from 30)
+};
+
+// Function to clear the cache when JID mappings are updated
+export const clearMappedLidCache = () => {
+  mappedLidCache.data = [];
+  mappedLidCache.lastUpdated = 0;
+  logger.info('Cleared mapped @lid JIDs cache');
+};
+
 export const getMessages = async (type = null, limit = 100) => {
   try {
     let query = '';
     
-    // First get all mapped @lid JIDs to avoid repeated subqueries
-    const mappedLidsQuery = `
-      SELECT DISTINCT jm.jid 
-      FROM jid_mappings jm 
-      WHERE jm.jid LIKE '%@lid'
-    `;
-    const mappedLids = await executeQuery(mappedLidsQuery);
-    const mappedLidList = mappedLids.map(row => row.jid).filter(jid => jid);
+    // Check cache first
+    const now = Date.now();
+    if (now - mappedLidCache.lastUpdated > mappedLidCache.cacheTimeoutMs) {
+      // Cache expired, fetch fresh data
+      const mappedLidsQuery = `
+        SELECT DISTINCT jm.jid 
+        FROM jid_mappings jm 
+        WHERE jm.jid LIKE '%@lid'
+      `;
+      const mappedLids = await executeQuery(mappedLidsQuery);
+      mappedLidCache.data = mappedLids.map(row => row.jid).filter(jid => jid);
+      mappedLidCache.lastUpdated = now;
+      logger.info('Refreshed mapped @lid JIDs cache:', mappedLidCache.data.length);
+    } else {
+      logger.debug('Using cached mapped @lid JIDs:', mappedLidCache.data.length);
+    }
+    
+    const mappedLidList = mappedLidCache.data;
     
     // Create exclusion clause if we have mapped @lid JIDs
     const excludeMappedLidClause = mappedLidList.length > 0 
@@ -44,25 +68,28 @@ export const getMessages = async (type = null, limit = 100) => {
     
     if (!type || type === 'all') {
       query = `
-        SELECT TOP ${limit} 'lead' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
-               colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
-               confidence, raw_message, created_at
-        FROM dealer_leads
-        WHERE 1=1 ${excludeMappedLidClause}
-        UNION ALL
-        SELECT TOP ${limit} 'offering' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
-               colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
-               confidence, raw_message, created_at
-        FROM distributor_offerings
-        WHERE 1=1 ${excludeMappedLidClause}
-        UNION ALL
-        SELECT TOP ${limit} 'ignored' as type, id, sender, chat_id, chat_type, null as brand, null as model, null as variant, 
-               null as ram, null as storage, null as colors, null as quantity, null as quantity_min, null as quantity_max, 
-               null as price, null as price_min, null as price_max, null as condition, null as gst, null as dispatch, 
-               confidence, raw_message, created_at
-        FROM ignored_messages
-        WHERE 1=1 ${excludeMappedLidClause}
+        SELECT * FROM (
+          SELECT 'lead' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
+                 colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
+                 confidence, raw_message, created_at
+          FROM dealer_leads
+          WHERE 1=1 ${excludeMappedLidClause}
+          UNION ALL
+          SELECT 'offering' as type, id, sender, chat_id, chat_type, brand, model, variant, ram, storage, 
+                 colors, quantity, quantity_min, quantity_max, price, price_min, price_max, condition, gst, dispatch, 
+                 confidence, raw_message, created_at
+          FROM distributor_offerings
+          WHERE 1=1 ${excludeMappedLidClause}
+          UNION ALL
+          SELECT 'ignored' as type, id, sender, chat_id, chat_type, null as brand, null as model, null as variant, 
+                 null as ram, null as storage, null as colors, null as quantity, null as quantity_min, null as quantity_max, 
+                 null as price, null as price_min, null as price_max, null as condition, null as gst, null as dispatch, 
+                 confidence, raw_message, created_at
+          FROM ignored_messages
+          WHERE 1=1 ${excludeMappedLidClause}
+        ) AS all_messages
         ORDER BY created_at DESC
+        OFFSET 0 ROWS FETCH NEXT ${limit} ROWS ONLY
       `;
     } else if (type === 'lead') {
       query = `SELECT TOP ${limit} * FROM dealer_leads WHERE 1=1 ${excludeMappedLidClause} ORDER BY created_at DESC`;
@@ -78,7 +105,13 @@ export const getMessages = async (type = null, limit = 100) => {
       params.push({ name: `mappedLid${i}`, value: jid, type: sql.NVarChar });
     });
     
-    return await executeQuery(query, params);
+    logger.info('Executing getMessages query with type:', type, 'limit:', limit);
+    
+    const result = await executeQuery(query, params);
+    
+    logger.info('getMessages returned:', result.length, 'messages');
+    
+    return result;
   } catch (error) {
     logger.error('Error getting messages:', error);
     throw error;

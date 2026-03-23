@@ -113,6 +113,7 @@ interface ChatInterfaceProps {
   contactId?: number;
   allConversationIds?: number[];
   targetMessageId?: string;
+  onContactUpdate?: (data: any) => void;
 }
 
 interface DisplayMessage {
@@ -134,7 +135,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   conversationId: propConversationId,
   contactId: propContactId,
   allConversationIds,
-  targetMessageId
+  targetMessageId,
+  onContactUpdate
 }) => {
   const navigate = useNavigate();
   const [replyText, setReplyText] = useState('');
@@ -164,6 +166,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
   const socketRef = useRef<Socket | null>(null);
+
+  // Helper function to format display name with ~ prefix for auto-generated contacts
+  const formatDisplayName = (conversationData: any) => {
+    const displayName = conversationData?.resolved_display_name || 
+                       conversationData?.contact_display_name || 
+                       conversationData?.display_name || 
+                       conversationData?.phone_number || 
+                       conversationData?.jid || 
+                       'Unknown';
+    
+    // Add ~ prefix for auto-generated contacts (from pushName)
+    if (conversationData?.contact_is_auto_generated && displayName !== conversationData?.phone_number && displayName !== conversationData?.jid) {
+      return `~${displayName}`;
+    }
+    
+    return displayName;
+  };
 
   // Load messages from database
   const loadMessages = async () => {
@@ -198,7 +217,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 resolved_display_name: mainParticipant.display_name || conversation.resolved_display_name,
                 contact_display_name: conversation.contact_display_name,
                 contact_phone: mainParticipant.phone_number || conversation.contact_phone,
-                contact_is_auto_generated: conversation.contact_is_auto_generated,
+                contact_is_auto_generated: mainParticipant.is_auto_generated || conversation.contact_is_auto_generated,
                 contact_profile_pic: conversation.contact_profile_pic,
                 jid_type: conversation.jid_type
               };
@@ -503,6 +522,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       });
     });
 
+    // Listen for contact updates (new messages, contact changes)
+    socket.on('contact_update', (data: any) => {
+      console.log('🔔 Contact update received:', data);
+      
+      // Refresh the contact list to show latest message at top
+      if (onContactUpdate) {
+        onContactUpdate(data);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log('Socket.IO connection closed');
     });
@@ -512,7 +541,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       console.log('Cleaning up socket connection');
       socket.disconnect();
     };
-  }, [conversationId, propContactId, allConversationIds]);
+  }, [conversationId, propContactId, allConversationIds, onContactUpdate]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -653,7 +682,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const getConversationType = (jid: string) => {
     if (jid.endsWith('@s.whatsapp.net')) return 'WhatsApp';
-    if (jid.endsWith('@lid')) return 'Business';
+    if (jid.endsWith('@lid')) return 'LID';
     if (jid.endsWith('@g.us')) return 'Group';
     if (jid.includes('@broadcast')) return 'Broadcast';
     return 'Unknown';
@@ -900,7 +929,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-white drop-shadow-sm truncate flex items-center gap-2">
-                  {conversationData?.resolved_display_name || conversationData?.contact_display_name || conversationData?.display_name || conversationData?.phone_number || conversationData?.jid || 'Unknown'}
+                  {formatDisplayName(conversationData)}
                 </h2>
                 <p className="text-xs text-[#dcf8c6]/90 truncate">
                   {conversationData?.source_jid && conversationData.source_jid !== conversationData.jid ? (
@@ -1053,13 +1082,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         {/* Unmapped @lid Info Banner */}
         {conversationData?.jid?.endsWith('@lid') && !conversationData?.contact_id && (
-          <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-400 p-3 mb-2">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400 p-3 mb-2">
             <div className="flex items-start gap-3">
               <div className="flex-1">
-                <div className="text-sm text-orange-800 dark:text-orange-200">
-                  <span className="font-semibold">Business Account (Unmapped):</span> This conversation is linked to a business WhatsApp account. 
+                <div className="text-sm text-blue-800 dark:text-blue-200">
+                  <span className="font-semibold">Unmapped Contact:</span> This contact is not yet saved. 
       
-                    Merge or Save Contact
+                    Save Contact
           
                   {' '}to display the contact name and link conversations.
                 </div>

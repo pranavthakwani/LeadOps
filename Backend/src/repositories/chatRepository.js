@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getSQLPool } from '../config/sqlserver.js';
 import { createLogger } from '../utils/logger.js';
+import { clearMappedLidCache } from '../api/sqlserver-api.js';
 
 const logger = createLogger('ChatRepository');
 
@@ -40,7 +41,7 @@ export const chatRepository = {
 
       const conversationId = inserted.recordset[0].id;
 
-      // Auto-link to existing contact if phone number matches
+      // Auto-link to existing contact if phone number matches AND conversation is not already linked
       if (type === 'direct' && jid.endsWith('@s.whatsapp.net')) {
         const phone = jid.replace('@s.whatsapp.net', '');
         const existingContact = await pool.request()
@@ -50,8 +51,21 @@ export const chatRepository = {
           `);
 
         if (existingContact.recordset.length > 0) {
-          await this.linkContact(conversationId, existingContact.recordset[0].id);
-          console.log(`Auto-linked conversation ${conversationId} to existing contact ${existingContact.recordset[0].id}`);
+          // Check if conversation is already linked to a contact
+          const convCheck = await pool.request()
+            .input('conversationId', sql.Int, conversationId)
+            .query(`
+              SELECT contact_id FROM conversations 
+              WHERE id = @conversationId AND contact_id IS NOT NULL
+            `);
+
+          // Only auto-link if conversation is not already linked
+          if (convCheck.recordset.length === 0) {
+            await this.linkContact(conversationId, existingContact.recordset[0].id);
+            console.log(`Auto-linked conversation ${conversationId} to existing contact ${existingContact.recordset[0].id}`);
+          } else {
+            console.log(`Conversation ${conversationId} already linked to contact ${convCheck.recordset[0].contact_id}, skipping auto-link`);
+          }
         }
       }
 
@@ -475,17 +489,36 @@ export const chatRepository = {
   async mapJidToContact(jid, contactId) {
     const pool = await getSQLPool();
 
-    // Check if mapping already exists
-    const existing = await pool.request()
+    // Check if JID is already mapped to any contact
+    const existingJid = await pool.request()
       .input('jid', sql.NVarChar, jid)
-      .input('contactId', sql.Int, contactId)
       .query(`
-        SELECT id FROM jid_mappings 
-        WHERE jid = @jid AND contact_id = @contactId
+        SELECT contact_id FROM jid_mappings 
+        WHERE jid = @jid
       `);
 
-    if (existing.recordset.length === 0) {
-      // Create new mapping
+    // If JID is already mapped to a different contact, we need to handle it
+    if (existingJid.recordset.length > 0) {
+      const existingContactId = existingJid.recordset[0].contact_id;
+      
+      if (existingContactId !== contactId) {
+        // JID is mapped to a different contact - this is a conflict
+        // For now, we'll update the existing mapping to point to the new contact
+        // This assumes the new mapping is more recent/correct
+        await pool.request()
+          .input('jid', sql.NVarChar, jid)
+          .input('contactId', sql.Int, contactId)
+          .query(`
+            UPDATE jid_mappings
+            SET contact_id = @contactId, created_at = GETUTCDATE()
+            WHERE jid = @jid
+          `);
+        
+        logger.info(`Updated JID ${jid} mapping from contact ${existingContactId} to contact ${contactId}`);
+      }
+      // If it's already mapped to the same contact, no action needed
+    } else {
+      // Create new mapping if JID doesn't exist
       await pool.request()
         .input('jid', sql.NVarChar, jid)
         .input('contactId', sql.Int, contactId)
@@ -496,6 +529,9 @@ export const chatRepository = {
       
       logger.info(`Mapped JID ${jid} to contact ${contactId}`);
     }
+
+    // Clear cache since JID mappings were updated
+    clearMappedLidCache();
 
     // Also link any conversations with this JID to the contact
     await pool.request()
@@ -554,6 +590,25 @@ export const chatRepository = {
   },
 
   // Update primary_jid for a contact (used when @lid JID is detected)
+  async transferJidMappings(sourceContactId, targetContactId) {
+    const pool = await getSQLPool();
+
+    // Transfer all JID mappings from source to target contact
+    await pool.request()
+      .input('sourceContactId', sql.Int, sourceContactId)
+      .input('targetContactId', sql.Int, targetContactId)
+      .query(`
+        UPDATE jid_mappings
+        SET contact_id = @targetContactId, created_at = GETUTCDATE()
+        WHERE contact_id = @sourceContactId
+      `);
+
+    logger.info(`Transferred JID mappings from contact ${sourceContactId} to contact ${targetContactId}`);
+    
+    // Clear cache since JID mappings were updated
+    clearMappedLidCache();
+  },
+
   async updatePrimaryJid(contactId, jid) {
     const pool = await getSQLPool();
 
@@ -642,6 +697,7 @@ export const chatRepository = {
             c.id,
             c.display_name,
             c.phone_number,
+            c.primary_jid,
             c.is_auto_generated,
             c.profile_pic_url,
             conv.id as conversation_id,
@@ -673,6 +729,7 @@ export const chatRepository = {
             rc.id,
             rc.display_name,
             rc.phone_number,
+            rc.primary_jid,
             rc.is_auto_generated,
             rc.profile_pic_url,
             rc.conversation_id,
@@ -692,6 +749,7 @@ export const chatRepository = {
           id,
           display_name,
           phone_number,
+          primary_jid,
           is_auto_generated,
           profile_pic_url,
           conversation_id,

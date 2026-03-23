@@ -438,7 +438,7 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
           {mode === 'merge' && (
             <>
               <div className="text-xs mb-2 text-gray-500">
-                {jid?.includes('@lid') ? 'Business Account' : 'WhatsApp User'}
+                {jid?.includes('@lid') ? 'LID Account' : 'WhatsApp User'}
               </div>
 
               {!createNewMode ? (
