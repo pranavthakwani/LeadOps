@@ -50,8 +50,8 @@ export const createApp = () => {
   // API endpoints for frontend
   app.get('/api/messages', async (req, res) => {
     try {
-      const { type } = req.query;
-      const data = await getMessages(type);
+      const { type, limit } = req.query;
+      const data = await getMessages(type, limit ? parseInt(limit) : 100);
       
       const messages = data.map(record => ({
         id: record.id,

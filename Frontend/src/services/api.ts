@@ -3,7 +3,7 @@ import type { Message, Contact, DashboardStats, HealthStatus, Product } from '..
 
 const api = axios.create({
   baseURL: '', // Use Vite proxy
-  timeout: 10000,
+  timeout: 30000,
 });
 
 export const getMessages = async (): Promise<Message[]> => {
