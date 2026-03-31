@@ -1173,6 +1173,7 @@ router.get('/leads', async (req, res) => {
       wa_message_id: lead.wa_message_id,
       sender: lead.sender || 'Unknown',
       senderNumber: lead.chat_id || '',
+      sender_jid: lead.sender, // Add participant JID for broadcast resolution
       preview: lead.raw_message ? lead.raw_message.substring(0, 100) + '...' : '',
       rawMessage: lead.raw_message || '',
       classification: 'lead',
@@ -1370,6 +1371,7 @@ router.get('/leads/:id', async (req, res) => {
       wa_message_id: data.wa_message_id,
       sender: data.sender || 'Unknown',
       senderNumber: data.chat_id || '',
+      sender_jid: data.sender, // Add participant JID for broadcast resolution
       preview: data.raw_message ? data.raw_message.substring(0, 100) + '...' : '',
       rawMessage: data.raw_message || '',
       classification: 'lead',
