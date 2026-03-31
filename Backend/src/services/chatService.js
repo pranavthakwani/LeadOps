@@ -663,9 +663,9 @@ export const chatService = {
       // Add group information
       isGroupMessage: isGroupMessage ? 1 : 0,
       originalGroupJid: originalGroupJid || (jidInfo.type === 'broadcast' ? jid : null),
-      // ✅ FIX: Add participant and pushName for group messages
-      participantJid: isGroupMessage ? actualJid : null,
-      pushName: isGroupMessage ? pushName : null
+      // ✅ FIX: Add participant and pushName for group AND broadcast messages
+      participantJid: (isGroupMessage || jidInfo.type === 'broadcast') ? actualJid : null,
+      pushName: (isGroupMessage || jidInfo.type === 'broadcast') ? pushName : null
     });
 
     // Link contact to conversation if we have one (BUT NOT FOR GROUPS!)
@@ -700,9 +700,9 @@ export const chatService = {
         // Add group information
         is_group_message: isGroupMessage,
         original_group_jid: originalGroupJid,
-        // ✅ FIX: Add participant and pushName for group messages
-        push_name: isGroupMessage ? pushName : null,
-        sender_jid: isGroupMessage ? actualJid : null
+        // ✅ FIX: Add participant and pushName for group AND broadcast messages
+        push_name: (isGroupMessage || jidInfo.type === 'broadcast') ? pushName : null,
+        sender_jid: (isGroupMessage || jidInfo.type === 'broadcast') ? actualJid : null
       };
       
       logger.info('Emitting new-message to Socket.IO', { 

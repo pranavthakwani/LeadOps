@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { X, Reply, Send, ChevronDown, MoreVertical, Trash2, AlertCircle } from 'lucide-react';
+import { X, Reply, Send, ChevronDown, MoreVertical, Trash2, AlertCircle, Volume2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { chatApi } from '../../services/chatApi';
 import { SOCKET_BASE_URL } from '../../config/network';
@@ -168,11 +168,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [mergedConversations, setMergedConversations] = useState<any[]>([]);
   const [unmergeLoading, setUnmergeLoading] = useState(false);
   const [mergedConversationCount, setMergedConversationCount] = useState(0);
+  const [contacts, setContacts] = useState<any[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
   const socketRef = useRef<Socket | null>(null);
+
+  // Helper function to check if message is from broadcast
+  const isBroadcastMessage = (message: DisplayMessage) => {
+    // Debug logging to see what data we have
+    console.log('🔍 Broadcast check:', {
+      conversationJid: conversationData?.jid,
+      messageSenderJid: message.senderJid,
+      sourceJid: conversationData?.source_jid,
+      conversationType: conversationData?.type,
+      isOutgoing: message.isOutgoing,
+      hasPushName: !!message.pushName,
+      hasSenderJid: !!message.senderJid
+    });
+    
+    // Multiple ways to detect broadcast messages:
+    return conversationData?.jid?.includes('@broadcast') || // Direct broadcast JID
+           message.senderJid?.includes('@broadcast') || // Message has broadcast JID
+           (conversationData?.source_jid?.includes('@broadcast')) || // Conversation has broadcast source
+           (conversationData?.type === 'individual' && !message.isOutgoing && message.pushName && message.senderJid) || // Individual conversation with pushName AND senderJid (strong broadcast indicator)
+           (!message.isOutgoing && message.pushName && conversationData?.type === 'individual'); // Incoming message with pushName in individual chat (most common broadcast scenario)
+  };
 
   // Helper function to format display name with proper styling for pushName vs saved name
   const formatDisplayName = (conversationData: any) => {
@@ -182,6 +204,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       : (conversationData?.display_name || 
          conversationData?.phone_number || 
          conversationData?.jid || 
+         conversationData?.lid ||
          'Unknown'); // Only show "Unknown" if absolutely nothing exists
     
     // Return object with display info for styling
@@ -230,6 +253,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const loadMessages = async () => {
     try {
       setIsLoading(true);
+      
+      // Load contacts for sender name resolution
+      const contactsList = await chatApi.getContacts();
+      setContacts(contactsList);
       
       let convId: number | null;
       let convData: any;
@@ -303,9 +330,42 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         
         console.log('🔍 Looking up conversation by JID:', { jid, messageChatId: message.chatId, senderNumber: message.senderNumber });
         
+        // For broadcast messages, we need to find the conversation by participant JID, not broadcast JID
+        let lookupJid = jid;
+        if (jid.includes('@broadcast')) {
+          // For broadcast messages, use the sender_jid field to find the participant conversation
+          console.log('📡 Broadcast message detected, finding participant conversation...');
+          
+          // Use sender_jid from message if available (this is the participant JID)
+          if (message.sender_jid && !message.sender_jid.includes('@broadcast')) {
+            lookupJid = message.sender_jid;
+            console.log('✅ Using sender_jid for broadcast participant:', lookupJid);
+          } else {
+            // Fallback: use sender field if it doesn't contain broadcast
+            const senderJid = message.sender || message.senderNumber;
+            if (senderJid && !senderJid.includes('@broadcast')) {
+              lookupJid = senderJid;
+              console.log('✅ Using sender field for broadcast participant:', lookupJid);
+            } else {
+              // Final fallback: look for the most recent non-broadcast conversation
+              const conversations = await chatApi.getConversations();
+              const participantConversation = conversations.find(conv => {
+                return conv.primary_jid && !conv.primary_jid.includes('@broadcast') && !conv.primary_jid.includes('@g.us');
+              });
+              
+              if (participantConversation) {
+                lookupJid = participantConversation.primary_jid;
+                console.log('✅ Found participant conversation for broadcast (fallback):', lookupJid);
+              } else {
+                console.log('❌ No participant conversation found for broadcast, using original JID');
+              }
+            }
+          }
+        }
+        
         // Get conversations to find the one matching this JID
         const conversations = await chatApi.getConversations();
-        const conversation = conversations.find(conv => conv.primary_jid === jid);
+        const conversation = conversations.find(conv => conv.primary_jid === lookupJid);
         
         if (conversation) {
           console.log('✅ Found conversation:', { id: conversation.id, conversation_id: conversation.conversation_id, jid: conversation.primary_jid });
@@ -1038,7 +1098,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     /* Don't show phone for auto-generated contacts - they come from broadcast/g.us and aren't real saved contacts */
                     conversationData?.contact_is_auto_generated 
                       ? conversationData?.jid 
-                      : (conversationData?.contact_phone || formatPhoneNumberDisplay(conversationData?.phone_number) || conversationData?.jid || 'No number')
+                      : (conversationData?.contact_phone || formatPhoneNumberDisplay(conversationData?.phone_number) || conversationData?.lid || conversationData?.jid || 'No number')
                   )}
                 </p>
               </div>
@@ -1329,7 +1389,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       >
 
                         {/* ✅ Sender Name (WhatsApp style) */}
-                        {!chatMessage.isOutgoing && conversationData?.type === 'group' && (
+                        {!chatMessage.isOutgoing && (conversationData?.type === 'group' || chatMessage.pushName || chatMessage.senderJid) && (
                           <div
                             className="text-[13px] font-semibold mb-0.5"
                             style={{
@@ -1338,7 +1398,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                               )
                             }}
                           >
-                            {chatMessage.pushName ? `~ ${chatMessage.pushName}` : (chatMessage.senderJid || 'Unknown')}
+                            {(() => {
+                              // First try pushName (from broadcast/group messages)
+                              if (chatMessage.pushName) {
+                                return `~ ${chatMessage.pushName}`;
+                              }
+                              
+                              // Then try to find contact by senderJid and use display_name
+                              if (chatMessage.senderJid) {
+                                const contact = contacts.find(c => c.primary_jid === chatMessage.senderJid);
+                                if (contact?.display_name) {
+                                  return contact.is_auto_generated ? `~ ${contact.display_name}` : contact.display_name;
+                                }
+                              }
+                              
+                              // Fallback to senderJid or Unknown
+                              return chatMessage.senderJid || 'Unknown';
+                            })()}
                           </div>
                         )}
 
@@ -1368,6 +1444,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                         {/* Time */}
                         <div className="flex justify-end items-end gap-1 mt-1">
+                          {/* Broadcast indicator */}
+                          {!chatMessage.isOutgoing && (() => {
+                            const shouldShow = isBroadcastMessage(chatMessage);
+                            console.log('🔊 Broadcast icon check:', { 
+                              messageId: chatMessage.id, 
+                              isOutgoing: chatMessage.isOutgoing, 
+                              shouldShow,
+                              hasPushName: !!chatMessage.pushName,
+                              senderJid: chatMessage.senderJid
+                            });
+                            return shouldShow;
+                          })() && (
+                            <Volume2 className="w-3 h-3 opacity-40" />
+                          )}
                           <span className="text-[10px] opacity-60">
                             {formatISTTime(chatMessage.timestamp)}
                           </span>

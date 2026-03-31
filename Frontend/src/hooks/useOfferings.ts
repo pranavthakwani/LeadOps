@@ -2,19 +2,44 @@ import { useState, useEffect } from 'react';
 import { getOfferings } from '../services/api';
 import type { Message } from '../types/message';
 
-export const useOfferings = () => {
+// Cache for storing paginated data
+const offeringsCache = new Map<number, Message[]>();
+
+export const useOfferings = (page: number = 1, limit: number = 20) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchOfferings = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getOfferings();
-      setMessages(data);
+      
+      // Check cache first
+      if (offeringsCache.has(page)) {
+        console.log(`📄 Using cached offerings for page ${page}`);
+        setMessages(offeringsCache.get(page)!);
+        setLoading(false);
+        return;
+      }
+      
+      console.log(`🌐 Fetching offerings for page ${page}, limit ${limit}`);
+      const response = await getOfferings(page, limit);
+      
+      if (response.success) {
+        const { data, pagination } = response;
+        setMessages(data || []);
+        setTotalCount(pagination?.total || 0);
+        
+        // Cache the results
+        offeringsCache.set(page, data || []);
+        console.log(`💾 Cached offerings for page ${page}`);
+      } else {
+        throw new Error(response.error || 'Failed to fetch offerings');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load offerings');
+      setError('Failed to load offerings');
       console.error(err);
     } finally {
       setLoading(false);
@@ -23,7 +48,7 @@ export const useOfferings = () => {
 
   useEffect(() => {
     fetchOfferings();
-  }, []);
+  }, [page, limit]);
 
-  return { messages, loading, error, refetch: fetchOfferings };
+  return { messages, loading, error, totalCount, refetch: fetchOfferings };
 };

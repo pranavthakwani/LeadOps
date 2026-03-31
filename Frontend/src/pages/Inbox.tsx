@@ -3,6 +3,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { MessageList } from '../components/inbox/MessageList';
 import { MessageFilters } from '../components/inbox/MessageFilters';
 import { IgnoredMessageList } from '../components/inbox/IgnoredMessageList';
+import { Pagination } from '../components/common/Pagination';
 import { Loader } from '../components/common/Loader';
 import { useMessages } from '../hooks/useMessages';
 import { useOfferings } from '../hooks/useOfferings';
@@ -18,7 +19,10 @@ export const Inbox: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('leads');
   const [searchQuery, setSearchQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState<'today' | '24h' | 'week' | 'month' | 'all'>('today');
+  const [currentPage, setCurrentPage] = useState(1);
   const debouncedSearch = useDebounce(searchQuery);
+  
+  const ITEMS_PER_PAGE = 20;
 
   // Set active tab and time filter from URL query parameter on component mount
   useEffect(() => {
@@ -41,11 +45,14 @@ export const Inbox: React.FC = () => {
     } else if (!isFromMessageDetail) {
       setTimeFilter('today'); // Reset to today for manual tab changes
     }
+    
+    // Reset page when tab changes
+    setCurrentPage(1);
   }, [searchParams, location.state]);
 
-  const { messages, loading: messagesLoading, error: messagesError } = useMessages();
-  const { messages: offerings, loading: offeringsLoading, error: offeringsError } = useOfferings();
-  const { messages: ignoredMessages, loading: ignoredLoading, error: ignoredError } = useIgnoredMessages();
+  const { messages, loading: messagesLoading, error: messagesError, totalCount: messagesTotalCount } = useMessages(currentPage, ITEMS_PER_PAGE);
+  const { messages: offerings, loading: offeringsLoading, error: offeringsError, totalCount: offeringsTotalCount } = useOfferings(currentPage, ITEMS_PER_PAGE);
+  const { messages: ignoredMessages, loading: ignoredLoading, error: ignoredError, totalCount: ignoredTotalCount } = useIgnoredMessages(currentPage, ITEMS_PER_PAGE);
 
   const filteredMessages = useMemo(() => {
     let filtered = activeTab === 'leads' ? messages : 
@@ -191,7 +198,7 @@ export const Inbox: React.FC = () => {
         )}
       </div>
 
-      {/* Messages List */}
+      {/* Messages List - Scrollable container */}
       <div className="flex-1 overflow-y-auto px-8 pb-8">
         {/* Accent line indicator */}
         <div className="flex items-center gap-3 mb-4">
@@ -223,6 +230,39 @@ export const Inbox: React.FC = () => {
         ) : (
           <MessageList messages={filteredMessages} currentTab={activeTab} currentTimeFilter={timeFilter} />
         )}
+      </div>
+
+      {/* Sticky Pagination */}
+      <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 z-10">
+        <div className="max-w-4xl mx-auto">
+          {activeTab === 'leads' && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(messagesTotalCount / ITEMS_PER_PAGE)}
+              onPageChange={setCurrentPage}
+              totalCount={messagesTotalCount}
+              itemsPerPage={ITEMS_PER_PAGE}
+            />
+          )}
+          {activeTab === 'offerings' && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(offeringsTotalCount / ITEMS_PER_PAGE)}
+              onPageChange={setCurrentPage}
+              totalCount={offeringsTotalCount}
+              itemsPerPage={ITEMS_PER_PAGE}
+            />
+          )}
+          {activeTab === 'ignored' && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(ignoredTotalCount / ITEMS_PER_PAGE)}
+              onPageChange={setCurrentPage}
+              totalCount={ignoredTotalCount}
+              itemsPerPage={ITEMS_PER_PAGE}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

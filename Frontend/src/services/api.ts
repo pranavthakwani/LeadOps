@@ -6,12 +6,14 @@ const api = axios.create({
   timeout: 30000,
 });
 
-export const getMessages = async (): Promise<Message[]> => {
+export const getMessages = async (page: number = 1, limit: number = 20): Promise<any> => {
   try {
-    const response = await api.get('/api/leads');
-    return response.data.data || [];
+    const response = await api.get('/api/leads', {
+      params: { page, limit }
+    });
+    return response.data;
   } catch (error) {
-    console.error('Error fetching leads:', error);
+    console.error('Error fetching messages:', error);
     throw error;
   }
 };
@@ -46,6 +48,18 @@ export const getOfferingById = async (id: string): Promise<Message | null> => {
   }
 };
 
+export const getIgnored = async (page: number = 1, limit: number = 20): Promise<any> => {
+  try {
+    const response = await api.get('/api/ignored', {
+      params: { page, limit }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching ignored messages:', error);
+    throw error;
+  }
+};
+
 export const getIgnoredById = async (id: string): Promise<Message | null> => {
   try {
     const response = await api.get(`/api/ignored/${id}`);
@@ -56,10 +70,12 @@ export const getIgnoredById = async (id: string): Promise<Message | null> => {
   }
 };
 
-export const getOfferings = async (): Promise<Message[]> => {
+export const getOfferings = async (page: number = 1, limit: number = 20): Promise<any> => {
   try {
-    const response = await api.get('/api/offerings');
-    return response.data.data || [];
+    const response = await api.get('/api/offerings', {
+      params: { page, limit }
+    });
+    return response.data;
   } catch (error) {
     console.error('Error fetching offerings:', error);
     throw error;
