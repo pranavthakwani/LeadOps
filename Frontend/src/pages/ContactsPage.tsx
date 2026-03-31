@@ -4,6 +4,7 @@ import { Search, Phone, MessageCircle, Check, CheckCheck, Plus, Users, Edit } fr
 import { chatApi } from '../services/chatApi';
 import { Loader } from '../components/common/Loader';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
+import { getFirstLetterForAvatar } from '../utils/avatarUtils';
 import { UnifiedContactModal } from '../components/common/UnifiedContactModal';
 import { ProfilePicPreviewModal } from '../components/common/ProfilePicPreviewModal';
 import { ChatInterface } from '../components/chat/ChatInterface';
@@ -175,13 +176,23 @@ export const ContactsPage: React.FC = () => {
         last_message_from_me: !!contact.last_message_from_me
       }));
       
-      // Backend now returns unique contacts, no need to merge
+      // Backend returns unique contacts, no need to merge
+      // Remove duplicates by ID to prevent React key warnings
+      const uniqueContacts = contacts.filter((contact, index, self) => 
+        self.findIndex(c => c.id === contact.id) === index
+      );
+      
       if (isLoadMore) {
-        // Append to existing contacts
-        setContacts(prev => [...prev, ...contacts]);
+        // Append to existing contacts and remove duplicates
+        setContacts(prev => {
+          const combined = [...prev, ...uniqueContacts];
+          return combined.filter((contact, index, self) => 
+            self.findIndex(c => c.id === contact.id) === index
+          );
+        });
       } else {
         // Replace all contacts
-        setContacts(contacts);
+        setContacts(uniqueContacts);
       }
 
       setHasMore(result.pagination.hasMore);
@@ -349,9 +360,9 @@ export const ContactsPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            filteredContacts.map((contact) => (
+            filteredContacts.map((contact, index) => (
               <div
-                key={contact.id}
+                key={`${contact.id}-${contact.primary_jid || index}`}
                 onClick={() => handleContactClick(contact)}
                 className={`flex items-center p-4 hover:bg-[#f5f6f6] dark:hover:bg-[#2a3942] transition-colors cursor-pointer rounded-lg mx-2 mb-1 ${
                   selectedContact?.id === contact.id 
@@ -382,7 +393,7 @@ export const ContactsPage: React.FC = () => {
                 ) : (
                   <div className="w-12 h-12 bg-[#00a884] rounded-full flex items-center justify-center mr-3">
                     <span className="text-white font-semibold">
-                      {formatContactDisplayName(contact).charAt(0).toUpperCase()}
+                      {getFirstLetterForAvatar(formatContactDisplayName(contact))}
                     </span>
                   </div>
                 )}
@@ -394,7 +405,7 @@ export const ContactsPage: React.FC = () => {
                       {getContactDisplay(contact)}
                     </h3>
                     <div className="flex items-center gap-2">
-                      {!contact.is_auto_generated && (
+                      {!contact.is_auto_generated && contact.primary_jid && !contact.primary_jid.includes('@g.us') && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -457,7 +468,7 @@ export const ContactsPage: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         {selectedContact ? (
           <ChatInterface 
-            conversationId={selectedContact.conversation_id || undefined}
+            conversationId={selectedContact.conversation_id || (selectedContact.all_conversation_ids?.length > 0 ? selectedContact.all_conversation_ids[0] : undefined)}
             contactId={selectedContact.id}
             allConversationIds={selectedContact.all_conversation_ids}
             onContactUpdate={handleContactUpdate}

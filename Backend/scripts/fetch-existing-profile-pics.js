@@ -1,7 +1,7 @@
 import { createLogger } from '../src/utils/logger.js';
-import { initSQLServer, getSQLPool } from '../src/config/sqlserver.js';
+import { initSupabaseChat } from '../src/config/supabase-chat.js';
 import { fetchProfilePicture } from '../src/services/profileService.js';
-import { chatRepository } from '../src/repositories/chatRepository.js';
+import { supabaseChatRepository as chatRepository } from '../src/repositories/supabase-chatRepository.js';
 
 const logger = createLogger('FetchExistingProfilePics');
 
@@ -9,22 +9,11 @@ async function fetchExistingProfilePics() {
   try {
     logger.info('Starting profile picture fetch for existing contacts...');
     
-    // Initialize SQL Server
-    await initSQLServer();
-    
-    const pool = await getSQLPool();
+    // Initialize Supabase
+    initSupabaseChat();
     
     // Get all contacts that have conversations but no profile picture
-    const result = await pool.request().query(`
-      SELECT DISTINCT c.id, c.phone_number, c.profile_pic_fetched
-      FROM contacts c
-      INNER JOIN conversations conv ON c.id = conv.contact_id
-      WHERE c.profile_pic_url IS NULL 
-        OR c.profile_pic_fetched = 0
-        OR c.profile_pic_fetched IS NULL
-    `);
-    
-    const contacts = result.recordset;
+    const contacts = await chatRepository.getContactsNeedingProfilePics();
     logger.info(`Found ${contacts.length} contacts without profile pictures`);
     
     // Get socket directly from global (if server is running)

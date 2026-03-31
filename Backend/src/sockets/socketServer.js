@@ -12,6 +12,9 @@ export const createSocketServer = (app) => {
   });
 
   global.io = io;
+  
+  // ✅ Attach io to Express app so routes can access it
+  app.set('io', io);
 
   io.on('connection', (socket) => {
     socket.on('join-conversation', (conversationId) => {

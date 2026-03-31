@@ -8,17 +8,17 @@ const api = axios.create({
 
 export const getMessages = async (): Promise<Message[]> => {
   try {
-    const response = await api.get('/api/messages');
+    const response = await api.get('/api/leads');
     return response.data.data || [];
   } catch (error) {
-    console.error('Error fetching messages:', error);
+    console.error('Error fetching leads:', error);
     throw error;
   }
 };
 
 export const getMessageById = async (id: string): Promise<Message | null> => {
   try {
-    const response = await api.get(`/api/messages/${id}`);
+    const response = await api.get(`/api/leads/${id}`);
     return response.data.data || null;
   } catch (error) {
     console.error('Error fetching lead:', error);
@@ -56,9 +56,19 @@ export const getIgnoredById = async (id: string): Promise<Message | null> => {
   }
 };
 
+export const getOfferings = async (): Promise<Message[]> => {
+  try {
+    const response = await api.get('/api/offerings');
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching offerings:', error);
+    throw error;
+  }
+};
+
 export const getMessageByIdNew = async (id: string, _type?: string): Promise<Message | null> => {
   try {
-    const response = await api.get(`/api/messages/${id}`);
+    const response = await api.get(`/api/leads/${id}`);
     const record = response.data.data;
     
     if (!record) return null;
@@ -213,68 +223,27 @@ export const searchProducts = async (params: {
   }
 };
 
-export const getAvailableModels = async (brand: string): Promise<string[]> => {
+export const getAvailableBrands = async (): Promise<string[]> => {
   try {
-    const response = await api.get(`/api/available-models?brand=${encodeURIComponent(brand)}`);
+    const response = await api.get('/api/brands');
     return response.data.data || [];
   } catch (error) {
-    console.error('Error fetching available models:', error);
+    console.error('Error fetching brands:', error);
+    return [];
+  }
+};
+
+export const getAvailableModels = async (brand: string): Promise<string[]> => {
+  try {
+    const response = await api.get(`/api/models/${brand}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching models:', error);
     return [];
   }
 };
 
 export const getTodayOfferingsByBrand = async (brand?: string, model?: string, quantity?: string, days?: string): Promise<Message[]> => {
-  try {
-    const queryParams = new URLSearchParams();
-    if (brand) {
-      queryParams.append('brand', brand);
-    }
-    if (model) {
-      queryParams.append('model', model);
-    }
-    if (quantity) {
-      queryParams.append('quantity', quantity);
-    }
-    if (days) {
-      queryParams.append('days', days);
-    }
-
-    console.log('Fetching offerings with params:', {
-      brand,
-      model,
-      quantity,
-      days,
-      queryParams: queryParams.toString()
-    });
-
-    const response = await api.get(`/api/today-offerings-by-brand?${queryParams.toString()}`);
-    return response.data.data || [];
-  } catch (error) {
-    console.error('Error fetching today offerings by brand:', error);
-    return [];
-  }
-};
-
-export const getAvailableBrands = async (): Promise<string[]> => {
-  try {
-    const response = await api.get('/api/available-brands');
-    return response.data.data || [];
-  } catch (error) {
-    console.error('Error fetching available brands:', error);
-    return [];
-  }
-};
-
-export const sendMessage = async (params: {
-  jid: string;
-  message: string;
-  replyToMessageId?: string;
-}): Promise<{ success: boolean; error?: string; data?: any }> => {
-  try {
-    const response = await api.post('/api/reply', params);
-    return response.data;
-  } catch (error: any) {
-    console.error('Error sending message:', error);
-    return { success: false, error: error?.message || 'Failed to send message' };
-  }
+  console.log('getTodayOfferingsByBrand called but not implemented for Supabase yet');
+  return [];
 };

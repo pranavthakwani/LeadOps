@@ -7,7 +7,7 @@ const api = axios.create({
 
 export const getIgnoredMessages = async () => {
   try {
-    const response = await api.get('/api/messages?type=ignored');
+    const response = await api.get('/api/ignored');
     return response.data.data || [];
   } catch (error) {
     console.error('Error fetching ignored messages:', error);

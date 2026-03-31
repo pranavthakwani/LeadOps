@@ -1,10 +1,10 @@
-import { chatRepository } from '../repositories/chatRepository.js';
+import { createLogger } from '../utils/logger.js';
+import { supabaseChatRepository as chatRepository } from '../repositories/supabase-chatRepository.js';
+import { enqueueProfilePicFetch } from './profilePicService.js';
 import { processPipeline } from '../pipeline/index.js';
 import { extractText } from '../utils/messageUtils.js';
-import { createLogger } from '../utils/logger.js';
 import { parseJid, extractPhoneFromJid } from '../utils/jidUtils.js';
 import { isBusinessMessage } from './business-filter.js';
-import { fetchProfilePicture, shouldFetchProfilePicture } from './profileService.js';
 
 const logger = createLogger('ChatService');
 
@@ -20,6 +20,26 @@ async function getQuotedMessageFromMe(quotedMessageId) {
 }
 
 export const chatService = {
+
+  // ✅ SMART PUSHNAME LOGIC: Determine if contact name should be updated
+  shouldUpdateContactName(contact, pushName) {
+    if (!contact || !contact.display_name) return true;
+    if (contact.is_auto_generated) return true;
+    
+    const displayName = contact.display_name;
+    
+    // Update if name is garbage
+    if (
+      displayName === 'Unknown' ||
+      displayName.match(/^\d+$/) || // only number
+      displayName.includes('@') ||   // JID
+      displayName === displayName    // basic check
+    ) {
+      return true;
+    }
+    
+    return false;
+  },
 
   // Store only actual content messages (filter out system messages, receipts, etc.)
   async storeMessage(message) {
@@ -90,10 +110,20 @@ export const chatService = {
       logger.info('Quote extracted:', { quotedText, quotedId });
     }
 
-    // Store message with real JID for contact mapping and source JID for conversation context
+    // ✅ DUPLICATE CHECK: Skip if message already exists (WhatsApp echo)
+    if (message.key.fromMe) {
+      const existingMessage = await chatRepository.getMessageById(waMessageId);
+      if (existingMessage) {
+        logger.info('⚡ Skipping duplicate outgoing message:', { waMessageId });
+        return; // Skip duplicate
+      }
+    }
+
+    // Store message with group support
     const conversationId = await chatRepository.insertMessage({
       jid: realJid, // Use real participant JID for contact mapping
-      sourceJid: sourceJid, // Store original JID for context
+      participantJid: message.key.participant || null, // Pass participant JID for group messages
+      pushName: message.pushName || null, // Pass pushName for display
       waMessageId,
       fromMe: message.key.fromMe ? 1 : 0,
       text,
@@ -104,6 +134,25 @@ export const chatService = {
     });
 
     logger.info('Message stored in DB', { waMessageId, quotedId, quotedText, hasRawMessage: true });
+
+    // Fetch group metadata and profile picture for new groups
+    if (sourceJid && sourceJid.endsWith('@g.us')) {
+      try {
+        const sock = global.baileysSock;
+        if (sock) {
+          // Fetch group metadata (with caching)
+          await chatRepository.fetchGroupMetadata(sourceJid, sock);
+          
+          // Fetch group profile picture (with caching)
+          await chatRepository.fetchGroupProfilePicture(sourceJid, sock);
+        }
+      } catch (error) {
+        logger.error('Failed to fetch group metadata/profile picture', { 
+          error: error.message, 
+          groupJid: sourceJid 
+        });
+      }
+    }
 
     // Emit to Socket.IO for real-time updates using conversation_id
     if (global.io && conversationId) {
@@ -117,13 +166,18 @@ export const chatService = {
         message_timestamp: timestamp,
         quoted_message_id: quotedId,
         quoted_text: quotedText, // Only send factual data
-        quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null
+        quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null,
+        // Group message specific fields
+        is_group_message: sourceJid.endsWith('@g.us') ? 1 : 0,
+        push_name: message.pushName || null,
+        sender_jid: message.key.participant || null
       };
       
       logger.info('Emitting new-message to Socket.IO', { 
         conversationId, 
         waMessageId, 
-        room: `conversation_${conversationId}` 
+        room: `conversation_${conversationId}`,
+        isGroupMessage: sourceJid.endsWith('@g.us')
       });
       
       global.io.to(`conversation_${conversationId}`).emit('new-message', messageData);
@@ -198,7 +252,7 @@ export const chatService = {
       const payload = {
         body: {
           sender: realJid, // Use real participant JID
-          sender_name: messageData.pushName || 'Unknown',
+          sender_name: messageData.pushName || null,
           chat_id: sourceJid, // Keep original JID for chat context
           chat_type: jidInfo.type === 'group' || jidInfo.type === 'broadcast' ? 'individual' : 'individual',
           timestamp: messageData.messageTimestamp,
@@ -322,7 +376,7 @@ export const chatService = {
     return conversationId;
   },
 
-  // Handle outgoing messages - ONLY store in conversations, no business filter or AI pipeline
+  // Handle outgoing messages - STORE them properly for complete chat history
   async handleOutgoingMessage(message) {
     try {
       const messageData = message;
@@ -347,13 +401,14 @@ export const chatService = {
         return;
       }
 
-      // Outgoing messages should NOT go through business filter or AI pipeline
-      // They are only stored in conversations for chat history
-      logger.info('Outgoing message stored only (no AI processing)', {
-        jid: messageData.key.remoteJid,
-        preview: text.substring(0, 50),
-        messageId: messageData.key.id
+      // ✅ FIX: Store outgoing messages in database too!
+      logger.info('Storing outgoing message from phone/device', { 
+        messageId: messageData.key.id,
+        fromMe: messageData.key.fromMe
       });
+      
+      // Use the same storage pipeline as incoming messages
+      await this.storeMessageWithContact(message, this.sock);
 
     } catch (error) {
       logger.error('❌ Error handling outgoing message', { 
@@ -367,7 +422,13 @@ export const chatService = {
   async storeMessageWithContact(message, sock = null) {
     const jid = message.key.remoteJid;
     const waMessageId = message.key.id;
-    const pushName = message.pushName || 'Unknown';
+    
+    // ✅ FIX: Don't override pushName for outgoing messages
+    let pushName = null;
+    if (!message.key.fromMe) {
+      // Only set pushName for incoming messages, never use "Unknown"
+      pushName = message.pushName || null;
+    }
 
     // Skip broadcast status messages
     if (jid === 'status@broadcast') {
@@ -445,20 +506,22 @@ export const chatService = {
         const participantJid = message.key.participant;
         const participantInfo = parseJid(participantJid);
         
-        if (participantInfo.type === 'user') {
-          phoneNumber = extractPhoneFromJid(participantJid);
+        if (participantInfo.type === 'user' || participantInfo.type === 'lid') {
+          phoneNumber = participantInfo.type === 'user' ? extractPhoneFromJid(participantJid) : null;
           actualJid = participantJid;
           logger.info('Resolved broadcast participant to real user', {
             broadcastJid: jid,
             participantJid,
-            phoneNumber
+            phoneNumber,
+            participantType: participantInfo.type
           });
         } else {
-          logger.debug('Broadcast participant is not a user, skipping', {
+          logger.debug('Broadcast participant is not a valid user type, skipping', {
             broadcastJid: jid,
-            participantJid
+            participantJid,
+            participantType: participantInfo.type
           });
-          return; // Skip if participant is not a user
+          return; // Skip if participant is not a user or lid
         }
       } else {
         logger.debug('Broadcast message has no participant, skipping', { jid });
@@ -470,21 +533,23 @@ export const chatService = {
         const participantJid = message.key.participant;
         const participantInfo = parseJid(participantJid);
         
-        if (participantInfo.type === 'user') {
-          phoneNumber = extractPhoneFromJid(participantJid);
+        if (participantInfo.type === 'user' || participantInfo.type === 'lid') {
+          phoneNumber = participantInfo.type === 'user' ? extractPhoneFromJid(participantJid) : null;
           actualJid = participantJid;
           logger.info('Resolved group participant to real user', {
             groupJid: jid,
             participantJid,
             phoneNumber,
+            participantType: participantInfo.type,
             isGroupMessage: true
           });
         } else {
-          logger.debug('Group participant is not a user, skipping', {
+          logger.debug('Group participant is not a valid user type, skipping', {
             groupJid: jid,
-            participantJid
+            participantJid,
+            participantType: participantInfo.type
           });
-          return; // Skip if participant is not a user
+          return; // Skip if participant is not a user or lid
         }
       } else {
         logger.debug('Group message has no participant, skipping', { jid });
@@ -521,12 +586,33 @@ export const chatService = {
     
     if (actualJid.endsWith('@s.whatsapp.net') && phoneNumber) {
       logger.info('Creating/updating contact for @s.whatsapp.net', { phoneNumber, pushName, isGroupMessage });
-      contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, pushName);
-      logger.info('Contact creation result', { contactId, phoneNumber, pushName });
       
-      // Always update primary_jid to ensure it's stored from actual JID
-      await chatRepository.updatePrimaryJid(contactId, actualJid);
-      logger.info('Updated primary_jid for contact', { contactId, actualJid });
+      // ✅ SMART PUSHNAME LOGIC: Only use pushName if contact needs improvement
+      let contactName = null;
+      if (pushName) {
+        const existingContact = await chatRepository.getContactByPhone(phoneNumber);
+        if (this.shouldUpdateContactName(existingContact, pushName)) {
+          contactName = pushName;
+          logger.info('Using pushName to update contact', { phoneNumber, pushName });
+        } else {
+          logger.debug('Keeping existing contact name', { phoneNumber, currentName: existingContact?.display_name, pushName });
+        }
+      }
+      
+      contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, contactName);
+      logger.info('Contact creation result', { contactId, phoneNumber, contactName });
+      
+      // ✅ FIX: Get the contact object for profile pic fetching
+      contact = await chatRepository.getContactById(contactId);
+      
+      // ✅ FIX: Only update primary_jid if changed
+      const currentContact = await chatRepository.getContactById(contactId);
+      if (!currentContact || currentContact.primary_jid !== actualJid) {
+        await chatRepository.updatePrimaryJid(contactId, actualJid);
+        logger.info('Updated primary_jid for contact', { contactId, actualJid });
+      } else {
+        logger.debug('Primary_jid unchanged, skipping update', { contactId, actualJid });
+      }
       
     } else if (actualJid.endsWith('@lid')) {
       logger.info('Creating/updating contact for @lid', { actualJid, pushName, isGroupMessage });
@@ -534,19 +620,25 @@ export const chatService = {
       contactId = await chatRepository.getOrCreateContactByJid(actualJid, pushName);
       logger.info('Contact creation result for @lid', { contactId, actualJid, pushName });
       
-      // Update primary_jid to @lid JID
-      await chatRepository.updatePrimaryJid(contactId, actualJid);
-      logger.info('Updated primary_jid for @lid contact', { contactId, actualJid });
+      // ✅ FIX: Get the contact object for profile pic fetching
+      contact = await chatRepository.getContactById(contactId);
+      
+      // ✅ FIX: Only update primary_jid if changed for @lid too
+      const currentLidContact = await chatRepository.getContactById(contactId);
+      if (!currentLidContact || currentLidContact.primary_jid !== actualJid) {
+        await chatRepository.updatePrimaryJid(contactId, actualJid);
+        logger.info('Updated primary_jid for @lid contact', { contactId, actualJid });
+      } else {
+        logger.debug('Primary_jid unchanged for @lid, skipping update', { contactId, actualJid });
+      }
     }
     
-    // Get full contact details for profile picture fetching
-    if (contactId) {
-      try {
-        const contacts = await chatRepository.getContactsByPhoneNumbers([phoneNumber].filter(Boolean));
-        contact = contacts.find(c => c.id === contactId);
-      } catch (error) {
-        logger.error('Failed to get contact details', { error: error.message, contactId });
-      }
+    // ✅ SAFE PROFILE PIC FETCHING: Use queue system for incoming messages only
+    // 🔴 CRITICAL: Refresh contact data to get latest profile_pic fields
+    const freshContact = await chatRepository.getContactById(contactId);
+    
+    if (!message.key.fromMe && freshContact) {
+      enqueueProfilePicFetch(freshContact);
     }
 
     // Store message and get conversation_id for socket emission
@@ -570,39 +662,24 @@ export const chatService = {
       rawMessage: JSON.stringify(message),
       // Add group information
       isGroupMessage: isGroupMessage ? 1 : 0,
-      originalGroupJid: originalGroupJid || (jidInfo.type === 'broadcast' ? jid : null)
+      originalGroupJid: originalGroupJid || (jidInfo.type === 'broadcast' ? jid : null),
+      // ✅ FIX: Add participant and pushName for group messages
+      participantJid: isGroupMessage ? actualJid : null,
+      pushName: isGroupMessage ? pushName : null
     });
 
-    // Link contact to conversation if we have one
-    if (contactId && conversationId) {
+    // Link contact to conversation if we have one (BUT NOT FOR GROUPS!)
+    if (contactId && conversationId && !isGroupMessage) {
       await chatRepository.linkContact(conversationId, contactId);
-    }
-
-    // Fetch profile picture using primary_jid if available and valid
-    if (contact && contact.primary_jid && shouldFetchProfilePicture(contact)) {
-      // Only fetch for @s.whatsapp.net, exclude @lid, @g.us, @broadcast
-      if (contact.primary_jid.endsWith('@s.whatsapp.net')) {
-        try {
-          const profilePicUrl = await fetchProfilePicture(sock, contact.primary_jid, contact);
-          if (profilePicUrl) {
-            await chatRepository.updateProfilePic(contact.id, profilePicUrl);
-            logger.info('Profile picture fetched and stored', { 
-              contactId: contact.id, 
-              primary_jid: contact.primary_jid 
-            });
-          }
-        } catch (error) {
-          logger.error('Profile picture fetch failed', { 
-            contactId: contact.id, 
-            error: error.message 
-          });
-          // Continue processing - don't block message flow
-        }
-      } else {
-        logger.debug('Skipping profile picture fetch for non-@s.whatsapp.net JID', { 
-          contactId: contact.id, 
-          primary_jid: contact.primary_jid 
-        });
+      logger.info('Linked conversation to contact', { conversationId, contactId });
+    } else if (isGroupMessage) {
+      logger.info('Skipping contact link for group message', { conversationId, jid });
+      
+      // ✅ FIX: If this is a group but already has contact_id, remove it
+      if (contactId) {
+        logger.warn('⚠️ Group conversation has contact_id - removing to fix group behavior', { conversationId, currentContactId: contactId });
+        // Direct update to fix existing group conversations
+        await chatRepository.updateConversationContactId(conversationId, null);
       }
     }
 
@@ -622,7 +699,10 @@ export const chatService = {
         quoted_from_me: quotedId ? (await getQuotedMessageFromMe(quotedId)) : null,
         // Add group information
         is_group_message: isGroupMessage,
-        original_group_jid: originalGroupJid
+        original_group_jid: originalGroupJid,
+        // ✅ FIX: Add participant and pushName for group messages
+        push_name: isGroupMessage ? pushName : null,
+        sender_jid: isGroupMessage ? actualJid : null
       };
       
       logger.info('Emitting new-message to Socket.IO', { 

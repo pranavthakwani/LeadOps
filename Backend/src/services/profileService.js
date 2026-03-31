@@ -1,5 +1,5 @@
 import { createLogger } from '../utils/logger.js';
-import { chatRepository } from '../repositories/chatRepository.js';
+import { supabaseChatRepository as chatRepository } from '../repositories/supabase-chatRepository.js';
 
 const logger = createLogger('ProfileService');
 

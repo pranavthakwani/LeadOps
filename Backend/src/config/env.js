@@ -1,10 +1,7 @@
 const validateEnv = () => {
   const required = [
-    'SQLSERVER_USER',
-    'SQLSERVER_PASSWORD',
-    'SQLSERVER_SERVER',
-    'SQLSERVER_DATABASE',
-    'SQLSERVER_PORT',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
     'OPENAI_API_KEY',
     'OPENAI_MODEL',
     'OPENAI_MAX_TOKENS',
@@ -24,12 +21,17 @@ export const getEnv = () => {
   validateEnv();
 
   return {
+    supabase: {
+      url: process.env.SUPABASE_URL,
+      serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY
+    },
+    // Keep SQL Server config for fallback/migration reference
     sqlserver: {
       user: process.env.SQLSERVER_USER,
       password: process.env.SQLSERVER_PASSWORD,
       server: process.env.SQLSERVER_SERVER,
       database: process.env.SQLSERVER_DATABASE,
-      port: parseInt(process.env.SQLSERVER_PORT, 10),
+      port: parseInt(process.env.SQLSERVER_PORT || '1433', 10),
       options: {
         encrypt: process.env.SQLSERVER_ENCRYPT === 'true',
         enableArithAbort: process.env.SQLSERVER_ENABLE_ARITH_ABORT === 'true',
@@ -41,12 +43,6 @@ export const getEnv = () => {
         min: parseInt(process.env.SQLSERVER_POOL_MIN || '0', 10),
         idleTimeoutMillis: parseInt(process.env.SQLSERVER_POOL_IDLE_TIMEOUT || '30000', 10)
       }
-    },
-    // Keep Supabase config for potential future use or migration
-    supabase: {
-      url: process.env.SUPABASE_URL,
-      anonKey: process.env.SUPABASE_ANON_KEY,
-      serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,

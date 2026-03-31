@@ -72,14 +72,15 @@ export interface Contact {
   all_conversation_ids?: string;
   last_message_text?: string;
   last_message_from_me?: boolean;
-  type?: 'direct' | 'group'; // Add type field for frontend
 }
 
 export const chatApi = {
-  // Get messages by conversation ID (preferred method)
-  async getMessagesByConversation(conversationId: number): Promise<ChatMessage[]> {
+  // Get messages by conversation ID (OPTIMIZED: with pagination)
+  async getMessagesByConversation(conversationId: number, page = 1, limit = 50): Promise<ChatMessage[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/conversations/${conversationId}/messages`);
+      const response = await axios.get(`${API_BASE_URL}/conversations/${conversationId}/messages`, {
+        params: { page, limit }
+      });
       return response.data.data?.messages || [];
     } catch (error) {
       console.error('Error fetching conversation messages:', error);
@@ -106,17 +107,6 @@ export const chatApi = {
     } catch (error) {
       console.error('Error fetching conversations:', error);
       return [];
-    }
-  },
-
-  // Get conversation by JID (for lead-to-conversation lookup)
-  async getConversationByJid(jid: string): Promise<Contact | null> {
-    try {
-      const conversations = await this.getConversations();
-      return conversations.find(conv => conv.primary_jid === jid) || null;
-    } catch (error) {
-      console.error('Error fetching conversation by JID:', error);
-      return null;
     }
   },
 
@@ -574,23 +564,6 @@ export const chatApi = {
     } catch (error) {
       console.error('Error fetching contact by JID:', error);
       return { found: false };
-    }
-  },
-
-  // Create conversation from lead data
-  async createConversationFromLead(leadData: {
-    contact_id?: number,
-    jid: string,
-    display_name: string,
-    phone_number?: string,
-    message?: string
-  }): Promise<{ success: boolean; conversationId?: number; error?: string }> {
-    try {
-      const response = await axios.post(`${API_BASE_URL}/create-conversation-from-lead`, leadData);
-      return response.data;
-    } catch (error) {
-      console.error('Error creating conversation from lead:', error);
-      throw error;
     }
   }
 };

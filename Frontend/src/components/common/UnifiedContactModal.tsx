@@ -124,7 +124,7 @@ interface UnifiedContactModalProps {
   mode: 'save' | 'edit' | 'merge';
   jid?: string;
   contactId?: number;
-  existingContact?: Contact;
+  existingContact?: any;
   onSuccess?: () => void;
 }
 
@@ -238,7 +238,18 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const res = await chatApi.searchContacts(query);
-        const contacts = res.contacts || [];
+        let contacts = res.contacts || [];
+        
+        // In merge mode, filter out the current contact to prevent merging with itself
+        if (mode === 'merge' && contactId) {
+          contacts = contacts.filter((contact: Contact) => contact.id !== contactId);
+        }
+        
+        // Also filter by JID if available (for additional safety)
+        if (mode === 'merge' && jid) {
+          contacts = contacts.filter((contact: Contact) => contact.primary_jid !== jid);
+        }
+        
         setSearchResults(contacts);
         
         // Auto-select first result if there are results and no contact is selected
@@ -251,7 +262,7 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
         setSelectedContact(null);
       }
     }, 300);
-  }, [selectedContact]);
+  }, [selectedContact, mode, contactId, jid]);
 
   const handleSaveContact = async () => {
     if (!name.trim()) {
@@ -353,7 +364,17 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
         // Use the new API to create contact and merge with @lid JID
         await chatApi.mergeLidWithNewContact(name.trim(), fullPhone, jid);
       } else if (selectedContact) {
-        await chatApi.mergeJidWithContact(jid, selectedContact.id);
+        // Check if we're merging a merged conversation (has multiple JIDs)
+        // If existingContact has allConversationIds array, it's a merged conversation
+        if (existingContact?.allConversationIds && existingContact.allConversationIds.length > 1) {
+          // This is a merged conversation - merge ALL JIDs to the target contact
+          console.log('Merging ALL conversations from merged contact to:', selectedContact.id);
+          const result = await chatApi.mergeAllConversations(existingContact.contact_id, selectedContact.id);
+          console.log('Merge all result:', result);
+        } else {
+          // Single JID merge - use existing logic
+          await chatApi.mergeJidWithContact(jid, selectedContact.id);
+        }
       } else {
         setError('Select contact or create new');
         setLoading(false);

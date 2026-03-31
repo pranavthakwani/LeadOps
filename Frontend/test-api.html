@@ -11,7 +11,7 @@
     <script>
         async function testAPI() {
             try {
-                const response = await fetch('http://localhost:5100/api/dashboard');
+                const response = await fetch('/api/dashboard');
                 const data = await response.json();
                 document.getElementById('result').innerHTML = `
                     <h2>API Response:</h2>

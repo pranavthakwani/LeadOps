@@ -17,10 +17,10 @@ const getBaseUrl = (): string => {
       return apiBaseUrl;
     }
     
-    // In development (localhost/127.0.0.1), point to backend server
+    // In development (localhost/127.0.0.1), use relative URLs to go through Vite proxy
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      // If frontend is running on different port, assume backend is on 5100
-      return `${protocol}//${hostname}:5100`;
+      // Use empty base URL to let Vite proxy handle the routing
+      return '';
     }
     
     // In production, use the same origin (frontend and backend on same server)

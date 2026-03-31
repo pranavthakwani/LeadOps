@@ -301,10 +301,7 @@ class BaileysService {
     // Setup read receipt tracking
     this.setupReadReceiptTracking();
     
-    // Setup group metadata tracking
-    this.setupGroupMetadataTracking();
-    
-    logger.info('✅ WhatsApp connection established with read receipt and group metadata tracking enabled');
+    logger.info('✅ WhatsApp connection established and read receipt tracking enabled');
     
     // Immediately save credentials to ensure session persistence
     if (this.authState) {
@@ -707,83 +704,82 @@ class BaileysService {
       return { success: false, error: 'WhatsApp not connected' };
     }
 
-    try {
+  try {
       logger.info('Sending WhatsApp reply', { jid, replyToMessageId, text: text.substring(0, 50) });
       
       let options = {};
 
-      if (replyToMessageId) {
+    if (replyToMessageId) {
         logger.info('Fetching quoted message from DB', { replyToMessageId });
         
         try {
-          // Import supabase chatRepository to fetch the full raw message
-          const { supabaseChatRepository } = await import('../repositories/supabase-chatRepository.js');
-          const quotedMessageFromDB = await supabaseChatRepository.getMessageById(replyToMessageId);
+        // Import supabase chatRepository to fetch the full raw message
+        const { supabaseChatRepository } = await import('../repositories/supabase-chatRepository.js');
+        const quotedMessageFromDB = await supabaseChatRepository.getMessageById(replyToMessageId);
+        
+        logger.info('Quoted message fetch result:', { 
+          found: !!quotedMessageFromDB,
+          hasRawMessage: !!quotedMessageFromDB?.raw_message,
+          messageId: replyToMessageId
+        });
+        
+        if (quotedMessageFromDB?.raw_message) {
+          logger.info('Found raw message, parsing for quote');
+          const quotedMsg = JSON.parse(quotedMessageFromDB.raw_message);
           
-          logger.info('Quoted message fetch result:', { 
-            found: !!quotedMessageFromDB,
-            hasRawMessage: !!quotedMessageFromDB?.raw_message,
-            messageId: replyToMessageId
+          options.quoted = quotedMsg;
+          logger.info('Quoted message set successfully', { quotedMsgKeys: Object.keys(quotedMsg) });
+        } else {
+          logger.warn('No raw message found for quoting, sending without quote', {
+            messageExists: !!quotedMessageFromDB,
+            hasRawMessage: !!quotedMessageFromDB?.raw_message
           });
-          
-          if (quotedMessageFromDB?.raw_message) {
-            logger.info('Found raw message, parsing for quote');
-            const quotedMsg = JSON.parse(quotedMessageFromDB.raw_message);
-            
-            options.quoted = quotedMsg;
-            logger.info('Quoted message set successfully', { quotedMsgKeys: Object.keys(quotedMsg) });
-          } else {
-            logger.warn('No raw message found for quoting, sending without quote', {
-              messageExists: !!quotedMessageFromDB,
-              hasRawMessage: !!quotedMessageFromDB?.raw_message
-            });
-          }
-        } catch (dbError) {
-          logger.error('Error fetching quoted message from DB', { error: dbError.message, replyToMessageId });
-          // Continue without quote rather than failing completely
         }
+      } catch (dbError) {
+        logger.error('Error fetching quoted message from DB', { error: dbError.message, replyToMessageId });
+        // Continue without quote rather than failing completely
       }
-
-      logger.info('Calling sendMessage', { hasQuoted: !!options.quoted });
-      const result = await this.sock.sendMessage(
-        jid,
-        { text },
-        options
-      );
-
-      this.sentMessages.set(result.key.id, {
-        jid,
-        text,
-        timestamp: new Date(),
-        status: 'sent'
-      });
-
-      logger.info('Message sent via WhatsApp', {
-        messageId: result.key.id,
-        jid,
-        text: text.substring(0, 50) + '...',
-        quoted: replyToMessageId ? 'yes' : 'no'
-      });
-
-      return {
-        success: true,
-        waMessageId: result.key.id
-      };
-
-    } catch (error) {
-      logger.error('Failed to send WhatsApp reply', {
-        error: error.message,
-        stack: error.stack,
-        jid,
-        replyToMessageId,
-        errorName: error.name,
-        errorCode: error.code
-      });
-      return {
-        success: false,
-        error: error.message
-      };
     }
+
+    logger.info('Calling sendMessage', { hasQuoted: !!options.quoted });
+    const result = await this.sock.sendMessage(
+      jid,
+      { text },
+      options
+    );
+
+    this.sentMessages.set(result.key.id, {
+      jid,
+      text,
+      timestamp: new Date(),
+      status: 'sent'
+    });
+
+    logger.info('Message sent via WhatsApp', {
+      messageId: result.key.id,
+      jid,
+      text: text.substring(0, 50) + '...',
+      quoted: replyToMessageId ? 'yes' : 'no'
+    });
+
+    return {
+      success: true,
+      waMessageId: result.key.id
+    };
+
+  } catch (error) {
+    logger.error('Failed to send WhatsApp reply', {
+      error: error.message,
+      stack: error.stack,
+      jid,
+      replyToMessageId,
+      errorName: error.name,
+      errorCode: error.code
+    });
+    return {
+      success: false,
+      error: error.message
+    };
   }
 
   // Initialize read receipt tracking
@@ -861,42 +857,38 @@ class BaileysService {
   }
 
   // Listen for group metadata updates (name changes, participant changes, etc.)
-  setupGroupMetadataTracking() {
-    if (!this.sock) return;
+  this.sock.ev.on('groups.update', async (updates) => {
+    for (const update of updates) {
+      if (update.subject) {
+        const groupJid = update.id;
+        const newName = update.subject;
 
-    this.sock.ev.on('groups.update', async (updates) => {
-      for (const update of updates) {
-        if (update.subject) {
-          const groupJid = update.id;
-          const newName = update.subject;
+        logger.info('[WhatsApp] Group name updated:', { 
+          groupJid, 
+          newName,
+          timestamp: new Date().toISOString()
+        });
 
-          logger.info('[WhatsApp] Group name updated:', { 
-            groupJid, 
-            newName,
-            timestamp: new Date().toISOString()
+        // Update group name in database
+        await this.updateGroupNameInDB(groupJid, newName);
+
+        // Emit to frontend for real-time UI updates
+        if (typeof global !== 'undefined' && global.io) {
+          global.io.emit('group_name_updated', {
+            jid: groupJid,
+            name: newName,
+            timestamp: Date.now()
           });
-
-          // Update group name in database
-          await this.updateGroupNameInDB(groupJid, newName);
-
-          // Emit to frontend for real-time UI updates
-          if (typeof global !== 'undefined' && global.io) {
-            global.io.emit('group_name_updated', {
-              jid: groupJid,
-              name: newName,
-              timestamp: Date.now()
-            });
-
-            logger.info('[WhatsApp] Group name update emitted to frontend:', {
-              groupJid,
-              newName,
-              room: 'group_name_updated'
-            });
-          }
+        
+          logger.info('[WhatsApp] Group name update emitted to frontend:', {
+            groupJid,
+            newName,
+            room: 'group_name_updated'
+          });
         }
       }
-    });
-  }
+    }
+  });
 
   // Update group name in database
   async updateGroupNameInDB(groupJid, newName) {

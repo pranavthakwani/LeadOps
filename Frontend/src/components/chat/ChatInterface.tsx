@@ -4,11 +4,14 @@ import { X, Reply, Send, ChevronDown, MoreVertical, Trash2, AlertCircle } from '
 import { useNavigate } from 'react-router-dom';
 import { chatApi } from '../../services/chatApi';
 import { SOCKET_BASE_URL } from '../../config/network';
-import type { Message } from '../../types/message';
+import { Message } from '../../types/message';
+import { Contact as ApiContact } from '../../services/chatApi';
 import { UnifiedContactModal } from '../common/UnifiedContactModal';
 import { ProfilePicPreviewModal } from '../common/ProfilePicPreviewModal';
 import { Loader } from '../common/Loader';
 import { formatPhoneNumberDisplay } from '../../utils/phoneUtils';
+import { getFirstLetterForAvatar } from '../../utils/avatarUtils';
+import { getColorFromString } from '../../utils/colorUtils';
 
 // Helper functions
 const formatISTDate = (date: Date) => {
@@ -128,6 +131,10 @@ interface DisplayMessage {
   quotedText?: string;
   quotedFromMe?: boolean;
   quotedSender?: string;
+  // Group message fields
+  pushName?: string;
+  senderJid?: string;
+  isGroupMessage?: boolean;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -167,21 +174,56 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
   const socketRef = useRef<Socket | null>(null);
 
-  // Helper function to format display name with ~ prefix for auto-generated contacts
+  // Helper function to format display name with proper styling for pushName vs saved name
   const formatDisplayName = (conversationData: any) => {
-    const displayName = conversationData?.resolved_display_name || 
-                       conversationData?.contact_display_name || 
-                       conversationData?.display_name || 
-                       conversationData?.phone_number || 
-                       conversationData?.jid || 
-                       'Unknown';
+    // For group conversations, prioritize group_name over other fields
+    const displayName = conversationData?.type === 'group' 
+      ? (conversationData?.group_name || conversationData?.display_name || conversationData?.jid || 'Unknown Group')
+      : (conversationData?.display_name || 
+         conversationData?.phone_number || 
+         conversationData?.jid || 
+         'Unknown'); // Only show "Unknown" if absolutely nothing exists
     
-    // Add ~ prefix for auto-generated contacts (from pushName)
-    if (conversationData?.contact_is_auto_generated && displayName !== conversationData?.phone_number && displayName !== conversationData?.jid) {
-      return `~${displayName}`;
-    }
+    // Return object with display info for styling
+    return {
+      text: displayName,
+      isPushName: conversationData?.is_auto_generated && 
+                  displayName !== conversationData?.phone_number && 
+                  displayName !== conversationData?.jid,
+      showTilde: conversationData?.is_auto_generated && 
+                displayName !== conversationData?.phone_number && 
+                displayName !== conversationData?.jid
+    };
+  };
+
+  // Helper function to get group participants from messages
+  const getGroupParticipants = () => {
+    if (!chatMessages || chatMessages.length === 0) return [];
+
+    const unique = new Map();
+
+    chatMessages.forEach(msg => {
+      if (!msg.isOutgoing) {
+        const jid = msg.senderJid || '';
+        const rawName = msg.pushName || jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '');
+        
+        // Add "~" prefix for push names (auto-generated names)
+        const displayName = msg.pushName && msg.pushName !== jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '') 
+          ? `~${rawName}` 
+          : rawName;
+
+        if (jid && !unique.has(jid)) {
+          unique.set(jid, displayName);
+        }
+      }
+    });
+
+    const participants = Array.from(unique.values());
     
-    return displayName;
+    // Always add "You" at the end for group chats since user is part of every group they can see
+    participants.push('You');
+
+    return participants;
   };
 
   // Load messages from database
@@ -199,85 +241,90 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         
         // Get conversation info
         const conversations = await chatApi.getConversations();
-        const conversation = conversations.find(conv => conv.id === convId);
+        const conversation = conversations.find(conv => conv.conversation_id === convId);
         
-        if (conversation) {
-          // For @g.us conversations, get the main participant
-          if (conversation.jid.endsWith('@g.us')) {
-            const mainParticipant = await chatApi.getMainParticipant(convId);
-            if (mainParticipant) {
-              convData = {
-                conversation_id: conversation.id,
-                jid: conversation.jid,
-                contact_id: mainParticipant.contact_id || conversation.resolved_contact_id || conversation.contact_id,
-                display_name: mainParticipant.display_name || conversation.resolved_display_name || conversation.contact_display_name || conversation.jid,
-                phone_number: mainParticipant.phone_number || conversation.contact_phone,
-                profile_pic_url: conversation.contact_profile_pic,
-                // Include new resolved fields
-                resolved_display_name: mainParticipant.display_name || conversation.resolved_display_name,
-                contact_display_name: conversation.contact_display_name,
-                contact_phone: mainParticipant.phone_number || conversation.contact_phone,
-                contact_is_auto_generated: mainParticipant.is_auto_generated || conversation.contact_is_auto_generated,
-                contact_profile_pic: conversation.contact_profile_pic,
-                jid_type: conversation.jid_type
-              };
-            } else {
-              convData = {
-                conversation_id: conversation.id,
-                jid: conversation.jid,
-                contact_id: conversation.resolved_contact_id || conversation.contact_id,
-                display_name: conversation.resolved_display_name || conversation.contact_display_name || conversation.display_name,
-                phone_number: conversation.contact_phone || conversation.phone_number,
-                profile_pic_url: conversation.contact_profile_pic || conversation.profile_pic_url,
-                // Include new resolved fields
-                resolved_display_name: conversation.resolved_display_name,
-                contact_display_name: conversation.contact_display_name,
-                contact_phone: conversation.contact_phone,
-                contact_is_auto_generated: conversation.contact_is_auto_generated,
-                contact_profile_pic: conversation.contact_profile_pic,
-                jid_type: conversation.jid_type
-              };
-            }
-          } else {
+        if (conversation && conversation.primary_jid) {
+          // For @g.us conversations, get the conversation directly
+          if (conversation.primary_jid.endsWith('@g.us')) {
+            // Groups don't have contacts, use conversation data directly
             convData = {
-              conversation_id: conversation.id,
-              jid: conversation.jid,
-              contact_id: conversation.resolved_contact_id || conversation.contact_id,
-              display_name: conversation.resolved_display_name || conversation.contact_display_name || conversation.display_name,
-              phone_number: conversation.contact_phone || conversation.phone_number,
-              profile_pic_url: conversation.contact_profile_pic || conversation.profile_pic_url,
-              // Include new resolved fields
-              resolved_display_name: conversation.resolved_display_name,
-              contact_display_name: conversation.contact_display_name,
-              contact_phone: conversation.contact_phone,
-              contact_is_auto_generated: conversation.contact_is_auto_generated,
-              contact_profile_pic: conversation.contact_profile_pic,
-              jid_type: conversation.jid_type
+              conversation_id: conversation.conversation_id,
+              jid: conversation.primary_jid,
+              contact_id: null, // Groups don't have contact_id
+              display_name: conversation.display_name || conversation.primary_jid,
+              phone_number: null, // Groups don't have phone numbers
+              profile_pic_url: conversation.profile_pic_url,
+              is_auto_generated: false,
+              type: conversation.type || 'group' // Include type for groups
+            };
+          } else {
+            // Direct conversation
+            convData = {
+              conversation_id: conversation.conversation_id,
+              jid: conversation.primary_jid,
+              contact_id: conversation.id,
+              display_name: conversation.display_name || conversation.primary_jid,
+              phone_number: conversation.phone_number,
+              profile_pic_url: conversation.profile_pic_url,
+              is_auto_generated: conversation.is_auto_generated,
+              type: conversation.type || 'direct' // Include type for direct
             };
           }
           setConversationData(convData);
           
-          // Check if this conversation has been merged (has contact_id but we're accessing by conversation_id)
-          if (conversation.contact_id && !propContactId) {
+          // Check if this conversation has been merged (has conversation_id but we're accessing by conversation_id)
+          if (conversation.conversation_id && !propContactId) {
             // This conversation is merged, we should show merged messages
             console.log('Detected merged conversation, loading merged messages', {
               conversationId: conversation.id,
-              contactId: conversation.contact_id
+              contactId: conversation.conversation_id
             });
             // The message loading logic below will handle this via convData.contact_id
           }
+        } else {
+          // Conversation not found, create fallback convData
+          console.warn('Conversation not found for ID:', convId, 'creating fallback data');
+          convData = {
+            conversation_id: convId,
+            jid: null,
+            contact_id: null,
+            display_name: 'Unknown Conversation',
+            phone_number: null,
+            type: 'direct'
+          };
+          setConversationData(convData);
         }
       } else if (message) {
         // Legacy message-based approach (from MessageDetail page)
+        // Use message.chatId directly as it contains the full JID
         const jid = message.chatId || message.senderNumber.includes('@') 
           ? message.senderNumber 
           : message.senderNumber + '@s.whatsapp.net';
         
+        console.log('🔍 Looking up conversation by JID:', { jid, messageChatId: message.chatId, senderNumber: message.senderNumber });
+        
         // Get conversations to find the one matching this JID
         const conversations = await chatApi.getConversations();
-        const conversation = conversations.find(conv => conv.jid === jid);
+        const conversation = conversations.find(conv => conv.primary_jid === jid);
         
-        if (!conversation) {
+        if (conversation) {
+          console.log('✅ Found conversation:', { id: conversation.id, conversation_id: conversation.conversation_id, jid: conversation.primary_jid });
+          convId = conversation.conversation_id || conversation.id;
+          setConversationId(convId);
+          
+          // Set convData with correct conversation info
+          convData = {
+            conversation_id: convId,
+            jid: conversation.primary_jid,
+            contact_id: conversation.id,
+            display_name: conversation.display_name || conversation.primary_jid,
+            phone_number: conversation.phone_number,
+            profile_pic_url: conversation.profile_pic_url,
+            is_auto_generated: conversation.is_auto_generated,
+            type: conversation.primary_jid.endsWith('@g.us') ? 'group' : 'direct'
+          };
+          setConversationData(convData);
+        } else {
           // Create temporary conversation data for non-saved contacts
           console.log('Conversation not found, creating temporary conversation for JID:', jid);
           
@@ -292,31 +339,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           
           // Set convId to null for temporary conversations
           convId = null;
-        } else {
-          convId = conversation.id;
-          setConversationId(convId);
-          
-          // Create conversationData object for UI consistency
-          convData = {
-            conversation_id: convId,
-            jid: conversation.jid,
-            contact_id: conversation.resolved_contact_id || conversation.contact_id,
-            display_name: conversation.resolved_display_name || conversation.contact_display_name || conversation.display_name,
-            phone_number: conversation.contact_phone || conversation.phone_number,
-            profile_pic_url: conversation.contact_profile_pic || conversation.profile_pic_url,
-            // Include new resolved fields
-            resolved_display_name: conversation.resolved_display_name,
-            contact_display_name: conversation.contact_display_name,
-            contact_phone: conversation.contact_phone,
-            contact_is_auto_generated: conversation.contact_is_auto_generated,
-            contact_profile_pic: conversation.contact_profile_pic,
-            jid_type: conversation.jid_type
-          };
-          setConversationData(convData);
         }
 
         // Initialize contact phone from JID if no contact exists
-        if (!convData.contact_id && convData.jid) {
+        if (convData && !convData.contact_id && convData.jid) {
           const phone = convData.jid.replace(/@s\.whatsapp\.net|@lid|@g\.us|@broadcast/g, '');
           // Extract phone number without country code for display (if needed for future use)
           const phoneOnly = phone.replace(/^\+/, '');
@@ -327,28 +353,50 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return;
       }
 
-      // Load messages using conversation_id or contact_id (for merged messages)
+      // Load messages with correct priority: group first, then contact, then conversation
       let dbMessages: any[] = [];
       
-      if (propContactId) {
-        // Use merged messages from all conversations linked to this contact
-        dbMessages = await chatApi.getMergedMessagesByContact(propContactId);
-        // Get conversation count for banner
-        const conversations = await chatApi.getConversationsByContact(propContactId);
-        setMergedConversationCount(conversations.length);
-      } else if (convData.contact_id) {
-        // Use merged messages from all conversations linked to this contact
-        dbMessages = await chatApi.getMergedMessagesByContact(convData.contact_id);
-        // Get conversation count for banner
-        const conversations = await chatApi.getConversationsByContact(convData.contact_id);
-        setMergedConversationCount(conversations.length);
-      } else if (convId) {
-        // Use single conversation messages
+      // Debug logging
+      console.log("Loading messages with:", {
+        conversationId: convId,
+        contactId: convData?.contact_id,
+        type: convData?.type,
+        propContactId
+      });
+      
+      if (convData?.type === 'group' && convId) {
+        // PRIORITY 1: Groups ALWAYS use conversation_id, never contact_id
+        console.log("Loading group messages by conversation_id:", convId);
+        // Edge case: If group has contact_id, ignore it
+        if (convData?.contact_id) {
+          console.warn("⚠️ Group conversation has contact_id - ignoring it as groups should not use contact_id", {
+            conversationId: convId,
+            contactId: convData?.contact_id
+          });
+        }
         dbMessages = await chatApi.getMessagesByConversation(convId);
         setMergedConversationCount(1);
-      } else if (convData.jid) {
-        // For temporary conversations (non-saved contacts), load messages by JID
-        dbMessages = await chatApi.getMessagesByJid(convData.jid);
+      } else if (propContactId) {
+        // PRIORITY 2: Use merged messages for direct chats when contactId is provided
+        console.log("Loading merged messages by contact_id:", propContactId);
+        dbMessages = await chatApi.getMergedMessagesByContact(propContactId);
+        const conversations = await chatApi.getConversationsByContact(propContactId);
+        setMergedConversationCount(conversations.length);
+      } else if (convData?.contact_id && convData?.type !== 'group') {
+        // PRIORITY 3: Use merged messages for direct chats with contact_id
+        console.log("Loading merged messages by convData.contact_id:", convData?.contact_id);
+        dbMessages = await chatApi.getMergedMessagesByContact(convData?.contact_id);
+        const conversations = await chatApi.getConversationsByContact(convData?.contact_id);
+        setMergedConversationCount(conversations.length);
+      } else if (convId) {
+        // PRIORITY 4: Fallback to conversation_id for direct chats
+        console.log("Loading direct messages by conversation_id:", convId);
+        dbMessages = await chatApi.getMessagesByConversation(convId);
+        setMergedConversationCount(1);
+      } else if (convData?.jid) {
+        // PRIORITY 5: For temporary conversations (non-saved contacts), load by JID
+        console.log("Loading messages by JID:", convData?.jid);
+        dbMessages = await chatApi.getMessagesByJid(convData?.jid);
         setMergedConversationCount(1);
       } else {
         // No way to load messages
@@ -357,6 +405,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       }
       
       // Convert database messages to display format
+      console.log("Raw messages from API:", dbMessages);
+      
+      // Ensure dbMessages is always an array
+      if (!Array.isArray(dbMessages)) {
+        console.error("❌ dbMessages is not an array:", typeof dbMessages, dbMessages);
+        dbMessages = [];
+      }
+      
       const displayMessages: DisplayMessage[] = dbMessages.map((msg: any) => ({
         id: msg.id,
         text: msg.message_text || '',
@@ -367,7 +423,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         isFromDb: true,
         quotedMessageId: msg.quoted_message_id,
         quotedText: msg.quoted_text,
-        quotedFromMe: msg.quoted_from_me
+        quotedFromMe: msg.quoted_from_me,
+        // Group message fields
+        pushName: msg.push_name,
+        senderJid: msg.sender_jid,
+        isGroupMessage: msg.is_group_message
       }));
 
       // Don't add the original message to chat - just show the existing chat history
@@ -489,7 +549,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     // Listen for new messages
     socket.on('new-message', (data: any) => {
       console.log('🔥 New message received in chat:', data);
+      console.log('Current conversation ID:', conversationId);
+      console.log('Message conversation_id:', data.conversation_id);
       console.log('Current chat messages count:', chatMessages.length);
+      
+      // Check if this message belongs to the current conversation
+      if (data.conversation_id && data.conversation_id !== conversationId) {
+        console.log('❌ Message not for current conversation, ignoring');
+        return;
+      }
       
       setChatMessages(prev => {
         // Check if message already exists (dedupe by waMessageId)
@@ -510,7 +578,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           isFromDb: true,
           quotedMessageId: data.quoted_message_id,
           quotedText: data.quoted_text,
-          quotedFromMe: data.quoted_from_me
+          quotedFromMe: data.quoted_from_me,
+          // Group message fields
+          pushName: data.push_name,
+          senderJid: data.sender_jid,
+          isGroupMessage: data.is_group_message
         };
 
         const updatedMessages = [...prev, newMessage].sort((a, b) => 
@@ -906,21 +978,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     onClick={() => {
                       setProfilePreview({
                         url: conversationData.profile_pic_url!,
-                        name: conversationData.display_name || conversationData.phone_number || 'Unknown'
+                        name: (() => {
+                    const nameInfo = formatDisplayName(conversationData);
+                    return nameInfo.showTilde ? `~${nameInfo.text}` : nameInfo.text;
+                  })() || conversationData.phone_number || 'Unknown'
                       });
                     }}
                   />
                 ) : conversationData?.resolved_display_name || conversationData?.contact_display_name ? (
                   <span className="text-white font-semibold text-sm">
-                    {(conversationData?.resolved_display_name || conversationData?.contact_display_name).charAt(0).toUpperCase()}
+                    {getFirstLetterForAvatar(conversationData?.resolved_display_name || conversationData?.contact_display_name)}
                   </span>
                 ) : conversationData?.display_name && conversationData.display_name !== null ? (
                   <span className="text-white font-semibold text-sm">
-                    {conversationData.display_name.charAt(0).toUpperCase()}
+                    {getFirstLetterForAvatar(conversationData.display_name)}
                   </span>
                 ) : (
                   <span className="text-white font-semibold text-sm">
-                    {conversationData?.display_name?.charAt(0).toUpperCase() || 
+                    {getFirstLetterForAvatar(conversationData?.display_name) || 
                      conversationData?.phone_number?.charAt(0) || 
                      conversationData?.jid?.charAt(0)?.toUpperCase() || 
                      '?'}
@@ -929,10 +1004,29 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-white drop-shadow-sm truncate flex items-center gap-2">
-                  {formatDisplayName(conversationData)}
+                  {(() => {
+                    const nameInfo = formatDisplayName(conversationData);
+                    return (
+                      <>
+                        {nameInfo.showTilde && <span className="text-white/70">~</span>}
+                        <span className={nameInfo.isPushName ? "font-normal" : "font-bold"}>
+                          {nameInfo.text}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </h2>
                 <p className="text-xs text-[#dcf8c6]/90 truncate">
-                  {conversationData?.source_jid && conversationData.source_jid !== conversationData.jid ? (
+                  {conversationData?.type === 'group' ? (
+                    (() => {
+                      const participants = getGroupParticipants();
+                      
+                      if (participants.length === 1 && participants[0] === 'You') return 'You';
+                      
+                      const display = participants.slice(0, 3).join(', ');
+                      return participants.length > 3 ? `${display}...` : display;
+                    })()
+                  ) : conversationData?.source_jid && conversationData.source_jid !== conversationData.jid ? (
                     <>
                       {/* For mapped contacts, show their phone; for unmapped/auto-generated, show nothing or raw JID */}
                       {conversationData?.contact_is_auto_generated 
@@ -964,7 +1058,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {showContactMenu && (
                   <div id="contact-menu" className="absolute right-0 top-full mt-1 bg-white dark:bg-[#202c33] rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-48 z-50">
                     {/* Contact is saved */}
-                    {conversationData?.contact_id && (
+                    {conversationData?.contact_id && conversationData?.type !== 'group' && (
                       <>
                         <button
                           onClick={() => {
@@ -999,8 +1093,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       </>
                     )}
                     
+                    {/* Group conversations - only show Info */}
+                    {conversationData?.type === 'group' && (
+                      <button
+                        onClick={() => {
+                          setShowContactMenu(false);
+                          // Handle conversation info
+                          handleInfoModalOpen();
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <span>Info</span>
+                      </button>
+                    )}
+                    
                     {/* Contact is not saved */}
-                    {!conversationData?.contact_id && (
+                    {!conversationData?.contact_id && conversationData?.type !== 'group' && (
                       <>
                         {conversationData?.jid?.endsWith('@s.whatsapp.net') && (
                           <button
@@ -1125,10 +1233,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="flex items-center">
               <div className="flex-1">
                 <div className="text-sm text-blue-800 dark:text-blue-200">
-                  <span className="font-semibold">Merged Conversation:</span> Showing messages from all conversations linked to {conversationData.display_name || 'Unknown Contact'}
+                  <span className="font-semibold">Merged Conversation:</span> Showing messages from {mergedConversationCount} conversations
                   {conversationData.phone_number && (
                     <span className="ml-2">({formatPhoneNumberDisplay(conversationData.phone_number)})</span>
                   )}
+                  <div className="mt-1 text-xs text-blue-600 dark:text-blue-300">
+                    JIDs: {mergedConversations.map(conv => conv.jid).join(', ')}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1203,65 +1314,79 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       ref={(el) => {
                         if (el) messageRefs.current.set(chatMessage.id, el);
                       }}
-                      className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-0.5' : 'mt-1'} group`}
+                      className={`flex ${chatMessage.isOutgoing ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-0.5' : 'mt-2'} group`}
                     >
-                      <div className={`relative max-w-[70%] px-2 py-1.5 rounded-lg text-sm hover:shadow-md transition-shadow duration-200 ${
-                        chatMessage.isOutgoing 
-                          ? 'bg-[#d9fdd3] text-black dark:bg-[#005c4b] dark:text-white' 
-                          : 'bg-white text-black dark:bg-[#202c33] dark:text-white'
-                      } ${
-                        chatMessage.isOutgoing 
-                          ? (isGrouped ? 'rounded-tr-lg' : 'rounded-tr-none')
-                          : (isGrouped ? 'rounded-tl-lg' : 'rounded-tl-none')
-                      }`}>
-                      {/* Quoted Message - INSIDE bubble */}
-                      {chatMessage.quotedText && (
-                        <div className={`mb-1 px-2 py-1 rounded-md text-xs border-l-4 ${
+                      <div
+                        className={`relative max-w-[70%] px-2 py-1.5 rounded-lg text-sm hover:shadow-md transition-shadow duration-200 ${
                           chatMessage.isOutgoing 
-                            ? 'bg-[#cfe9ba] border-green-600 dark:bg-[#004d3a] dark:border-green-500'
-                            : 'bg-[#f0f2f5] border-[#00a884] dark:bg-[#2a3942] dark:border-[#00a884]'
-                        }`}>
-                          <div className="font-semibold text-[11px] text-[#00a884] dark:text-[#00a884]">
-                            {chatMessage.quotedFromMe ? 'You' : (conversationData?.display_name || 'Contact')}
-                          </div>
-                          <div 
-                            className="truncate text-[12px] opacity-80 cursor-pointer hover:opacity-100"
-                            onClick={() => handleScrollToQuotedMessage(chatMessage)}
-                          >
-                            {chatMessage.quotedText}
-                          </div>
-                        </div>
-                      )}
-                      
-
-                      {/* Message Text */}
-                      <div className="break-words whitespace-pre-wrap">
-                        {chatMessage.text}
-                      </div>
-                      
-
-                      {/* Timestamp - INSIDE bubble */}
-                      <div className="flex justify-end items-end gap-1 mt-1">
-                        <span className="text-[10px] opacity-60 dark:opacity-70">
-                          {formatISTTime(chatMessage.timestamp)}
-                        </span>
-                        {chatMessage.isOutgoing && (
-                          <svg viewBox="0 0 24 24" className="w-3 h-3 opacity-60 dark:opacity-70" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                          </svg>
-                        )}
-                      </div>
-                      
-                      {/* Quote Button - Show on hover */}
-                      <button
-                        onClick={() => handleQuoteMessage(chatMessage)}
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
-                        title="Reply to message"
+                            ? 'bg-[#d9fdd3] text-black dark:bg-[#005c4b] dark:text-white' 
+                            : 'bg-white text-black dark:bg-[#202c33] dark:text-white'
+                        } ${
+                          chatMessage.isOutgoing 
+                            ? (isGrouped ? 'rounded-tr-lg' : 'rounded-tr-none')
+                            : (isGrouped ? 'rounded-tl-lg' : 'rounded-tl-none')
+                        }`}
                       >
-                        <Reply className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-                      </button>
+
+                        {/* ✅ Sender Name (WhatsApp style) */}
+                        {!chatMessage.isOutgoing && conversationData?.type === 'group' && (
+                          <div
+                            className="text-[13px] font-semibold mb-0.5"
+                            style={{
+                              color: getColorFromString(
+                                chatMessage.senderJid || chatMessage.pushName || 'default'
+                              )
+                            }}
+                          >
+                            {chatMessage.pushName ? `~ ${chatMessage.pushName}` : (chatMessage.senderJid || 'Unknown')}
+                          </div>
+                        )}
+
+                        {/* Quoted Message */}
+                        {chatMessage.quotedText && (
+                          <div className={`mb-1 px-2 py-1 rounded-md text-xs border-l-4 ${
+                            chatMessage.isOutgoing 
+                              ? 'bg-[#cfe9ba] border-green-600 dark:bg-[#004d3a] dark:border-green-500'
+                              : 'bg-[#f0f2f5] border-[#00a884] dark:bg-[#2a3942] dark:border-[#00a884]'
+                          }`}>
+                            <div className="font-semibold text-[11px] text-[#00a884]">
+                              {chatMessage.quotedFromMe ? 'You' : (conversationData?.display_name || 'Contact')}
+                            </div>
+                            <div 
+                              className="truncate text-[12px] opacity-80 cursor-pointer hover:opacity-100"
+                              onClick={() => handleScrollToQuotedMessage(chatMessage)}
+                            >
+                              {chatMessage.quotedText}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Message Text */}
+                        <div className="break-words whitespace-pre-wrap">
+                          {chatMessage.text}
+                        </div>
+
+                        {/* Time */}
+                        <div className="flex justify-end items-end gap-1 mt-1">
+                          <span className="text-[10px] opacity-60">
+                            {formatISTTime(chatMessage.timestamp)}
+                          </span>
+                          {chatMessage.isOutgoing && (
+                            <svg viewBox="0 0 24 24" className="w-3 h-3 opacity-60" fill="currentColor">
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                            </svg>
+                          )}
+                        </div>
+
+                        {/* Reply Button */}
+                        <button
+                          onClick={() => handleQuoteMessage(chatMessage)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        >
+                          <Reply className="w-3 h-3 text-gray-600 dark:text-gray-400" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
                   </React.Fragment>
                 );
               })}
@@ -1436,14 +1561,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onSuccess={async () => {
             // Refresh conversation data after modal action
             if (conversationId) {
-              const conversations = await chatApi.getConversations();
-              const conv = conversations.find(c => c.id === conversationId);
+              const conversations: ApiContact[] = await chatApi.getConversations();
+              const conv = conversations.find(c => c.conversation_id === conversationId);
               
               // If this conversation now has a contact_id, fetch the contact details
-              if (conv?.contact_id) {
+              if (conv?.id) {
                 try {
                   const contacts = await chatApi.getContacts();
-                  const contact = contacts.find(c => c.id === conv.contact_id);
+                  const contact = contacts.find(c => c.id === conv.id);
                   
                   if (contact) {
                     // Update conversationData with proper contact info
@@ -1457,8 +1582,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   }
                   
                   // Fetch all conversation IDs for socket rooms
-                  const contactConversations = await chatApi.getConversationsByContact(conv.contact_id);
-                  setConversationData((prev: any) => prev ? {...prev, allConversationIds: contactConversations.map((c: any) => c.id)} : null);
+                  if (conv.type === 'group') {
+                    // For groups, use the single conversation ID
+                    setConversationData((prev: any) => prev ? {...prev, allConversationIds: [conv.conversation_id || conv.id]} : null);
+                  } else {
+                    // For direct conversations, fetch all linked conversations
+                    const contactConversations = await chatApi.getConversationsByContact(conv.id);
+                    setConversationData((prev: any) => prev ? {...prev, allConversationIds: contactConversations.map((c: any) => c.id)} : null);
+                  }
                 } catch (error) {
                   console.error('Error fetching contact conversations:', error);
                   setConversationData(conv);
@@ -1497,62 +1628,122 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ) : (
                   <>
                     <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Contact: {conversationData?.display_name || 'Unknown'}
-                      </h4>
-                      {conversationData?.phone_number && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Phone: {formatPhoneNumberDisplay(conversationData.phone_number)}
-                        </p>
+                      {conversationData?.type === 'group' ? (
+                        <>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Group Name: {conversationData?.group_name || conversationData?.display_name || 'Unknown Group'}
+                          </h4>
+                        </>
+                      ) : (
+                        <>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Contact: {conversationData?.display_name || 'Unknown'}
+                          </h4>
+                          {conversationData?.phone_number && (
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              Phone: {formatPhoneNumberDisplay(conversationData.phone_number)}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                     
                     <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Merged Conversations ({mergedConversations.length})
-                      </h4>
-                      
-                      {mergedConversations.length === 0 ? (
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          No conversations found
-                        </p>
+                      {conversationData?.type === 'group' ? (
+                        <>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Participants
+                          </h4>
+                          
+                          {(() => {
+                            const participants = getGroupParticipants();
+                            
+                            if (participants.length === 0) {
+                              return (
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  No participants found
+                                </p>
+                              );
+                            }
+                            
+                            return (
+                              <div className="space-y-1">
+                                {participants.map((participant, index) => (
+                                  <div
+                                    key={index}
+                                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded"
+                                  >
+                                    <span className="text-sm text-gray-900 dark:text-white">
+                                      {participant}
+                                    </span>
+                                    {participant !== 'You' && (
+                                      <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                                        {(() => {
+                                          const participantMsg = chatMessages.find(msg => 
+                                            !msg.isOutgoing && (
+                                              msg.pushName === participant.replace('~', '') || 
+                                              msg.senderJid?.includes(participant.replace('~', ''))
+                                            )
+                                          );
+                                          return participantMsg?.senderJid || 'Unknown JID';
+                                        })()}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ); 
+                          })()}
+                        </>
                       ) : (
-                        mergedConversations.map((conv) => (
-                          <div
-                            key={conv.id}
-                            className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                          >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                  {conv.type}
-                                </span>
-                                {conv.is_primary && (
-                                  <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded">
-                                    Primary
-                                  </span>
+                        <>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Merged Conversations ({mergedConversations.length})
+                          </h4>
+                          
+                          {mergedConversations.length === 0 ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              No conversations found
+                            </p>
+                          ) : (
+                            mergedConversations.map((conv) => (
+                              <div
+                                key={conv.id}
+                                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                      {conv.type}
+                                    </span>
+                                    {conv.is_primary && (
+                                      <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded">
+                                        Primary
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                                    {conv.jid}
+                                  </p>
+                                </div>
+                                
+                                {!conv.is_primary && mergedConversations.length > 1 && (
+                                  <button
+                                    onClick={() => handleUnmergeConversation(conv)}
+                                    className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1"
+                                    title="Unmerge this conversation"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                                {conv.jid}
-                              </p>
-                            </div>
-                            
-                            {!conv.is_primary && mergedConversations.length > 1 && (
-                              <button
-                                onClick={() => handleUnmergeConversation(conv)}
-                                className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1"
-                                title="Unmerge this conversation"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))
+                            ))
+                          )}
+                        </>
                       )}
                     </div>
                     
-                    {mergedConversations.length > 1 && (
+                    {conversationData?.type !== 'group' && mergedConversations.length > 1 && (
                       <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                         <div className="flex items-start gap-2">
                           <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5" />

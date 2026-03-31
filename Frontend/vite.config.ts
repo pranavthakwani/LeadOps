@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 const env = loadEnv('', process.cwd());
 
 // Dynamic backend URL from environment
-const BACKEND_URL = env.VITE_API_URL || 'http://localhost:5100';
+const BACKEND_URL = env.VITE_API_URL || 'http://localhost:3000';
 
 // https://vitejs.dev/config/
 export default defineConfig({

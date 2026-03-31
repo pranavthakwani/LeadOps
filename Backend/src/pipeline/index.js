@@ -4,7 +4,8 @@ import { parseAndValidateJSON } from './03-parse-validate-json.js';
 import { zodSchemaValidation } from './04-zod-schema-validation.js';
 import { brandVariantNormalization } from './05-brand-variant-normalization.js';
 import { routeByMessageType } from './06-route-by-message-type.js';
-import { insertToSQLServerDB } from './07-insert-to-db-sqlserver.js';
+// import { insertToSQLServerDB } from './07-insert-to-db-sqlserver.js';
+import { insertToSupabaseDB } from './08-insert-to-supabase.js';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('Pipeline');
@@ -33,8 +34,9 @@ export const processPipeline = async (webhookPayload) => {
     let routedItems = routeByMessageType(normalizedItems);
     logger.debug('Message routing complete', { count: routedItems.length });
 
-    let insertedItems = await insertToSQLServerDB(routedItems);
-    logger.debug('Database insert complete', { count: insertedItems.length });
+    // Insert into Supabase instead of SQL Server
+    let insertedItems = await insertToSupabaseDB(routedItems);
+    logger.debug('Supabase insert complete', { count: insertedItems.length });
 
     logger.info('Pipeline completed', { sender: webhookPayload.body?.sender });
 

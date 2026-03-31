@@ -1,35 +1,210 @@
 import express from 'express';
-import { chatRepository } from '../repositories/chatRepository.js';
+import { supabaseChatRepository as chatRepository } from '../repositories/supabase-chatRepository.js';
 import { chatService } from '../services/chatService.js';
+import { baileysService } from '../services/baileys.js';
+import { getSupabaseChat } from '../config/supabase-chat.js';
 
 const router = express.Router();
+
+// Send message to conversation
+router.post('/conversations/:id/send-message', async (req, res) => {
+  try {
+    const conversationId = parseInt(req.params.id);
+    const { messageText, targetJid, replyToMessageId } = req.body;
+    
+    console.log('🔍 /conversations/:id/send-message called:', { 
+      conversationId, 
+      messageText, 
+      targetJid,
+      body: req.body 
+    });
+    
+    if (!conversationId || isNaN(conversationId)) {
+      console.error('❌ Invalid conversationId:', conversationId);
+      return res.status(400).json({ error: 'Invalid conversation ID' });
+    }
+    
+    if (!messageText) {
+      console.error('❌ No messageText provided');
+      return res.status(400).json({ error: 'Message text is required' });
+    }
+    
+    if (!targetJid) {
+      console.error('❌ No targetJid provided - this is required!');
+      return res.status(400).json({ error: 'Target JID is required' });
+    }
+    
+    // Get conversation to verify it exists
+    const conversation = await chatRepository.getConversationById(conversationId);
+    if (!conversation) {
+      console.error('❌ Conversation not found:', conversationId);
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    // Send message via WhatsApp service
+    let result;
+    if (replyToMessageId) {
+      // This is a reply - use sendReply
+      result = await baileysService.sendReply(targetJid, messageText, replyToMessageId);
+    } else {
+      // This is a normal message - use sendMessage
+      result = await baileysService.sendMessage(targetJid, messageText);
+    }
+    
+    console.log('✅ Message sent successfully:', { 
+      conversationId, 
+      targetJid, 
+      messageId: result?.messageId || result?.waMessageId,
+      hasReplyToId: !!replyToMessageId
+    });
+
+    // ✅ OPTIMISTIC: Insert message immediately for instant UI update
+    const tempMessageId = result?.messageId || result?.waMessageId;
+    if (tempMessageId) {
+      try {
+        console.log('🔍 Attempting optimistic insertion:', { 
+          messageId: tempMessageId,
+          hasQuote: !!replyToMessageId,
+          quoteId: replyToMessageId
+        });
+        
+        // Insert outgoing message directly using repository method
+        const insertResult = await chatRepository.insertOptimisticMessage({
+          jid: targetJid,
+          wa_message_id: tempMessageId,
+          from_me: true,
+          message_text: messageText,
+          message_timestamp: Date.now(),
+          conversation_id: conversationId,
+          push_name: null,
+          quoted_message_id: replyToMessageId || null
+        });
+        
+        console.log('⚡ Optimistic message insert result:', { 
+          success: !!insertResult, 
+          messageId: tempMessageId,
+          hasQuote: !!replyToMessageId,
+          quoteId: replyToMessageId
+        });
+        
+        // Update conversation last_message_at immediately
+        await chatRepository.updateConversationTimestamp(conversationId);
+        
+        // Emit socket immediately for instant UI update
+        const io = req.app.get('io');
+        console.log('🔍 Socket IO check:', { hasIo: !!io, conversationId });
+        
+        // Fetch quoted message details if this is a reply
+        let quotedMessageData = null;
+        if (replyToMessageId) {
+          try {
+            const quotedMsg = await chatRepository.getMessageById(replyToMessageId);
+            if (quotedMsg) {
+              quotedMessageData = {
+                quoted_text: quotedMsg.message_text,
+                quoted_from_me: quotedMsg.from_me
+              };
+              console.log('📝 Found quoted message:', quotedMessageData);
+            }
+          } catch (quoteError) {
+            console.warn('⚠️ Could not fetch quoted message:', quoteError);
+          }
+        }
+        
+        if (io) {
+          console.log('🔍 Emitting to room:', `conversation_${conversationId}`);
+          io.to(`conversation_${conversationId}`).emit('new-message', {
+            id: tempMessageId,
+            waMessageId: tempMessageId, // ✅ Add waMessageId field
+            message_text: messageText,
+            from_me: true,
+            fromMe: true, // ✅ Add fromMe field (frontend expects this)
+            conversation_id: conversationId,
+            message_timestamp: Date.now(),
+            quoted_message_id: replyToMessageId || null,
+            quoted_text: quotedMessageData?.quoted_text || null, // ✅ Include actual quoted text
+            quoted_from_me: quotedMessageData?.quoted_from_me || null, // ✅ Include quoted from_me flag
+            // Group message fields (for consistency, even if not group)
+            push_name: null,
+            sender_jid: targetJid.endsWith('@g.us') ? targetJid : null,
+            is_group_message: targetJid.endsWith('@g.us')
+          });
+          
+          console.log('⚡ Optimistic message emitted:', { 
+            conversationId, 
+            messageId: tempMessageId,
+            text: messageText.substring(0, 30),
+            hasQuote: !!quotedMessageData
+          });
+        } else {
+          console.error('❌ Socket IO not available in send-message endpoint');
+        }
+        
+        console.log('⚡ Optimistic message inserted:', tempMessageId);
+        console.log('⚡ Conversation timestamp updated:', conversationId);
+      } catch (optimisticError) {
+        console.error('❌ Optimistic insert failed:', optimisticError);
+        // Don't fail the request, just log it
+      }
+    }
+
+    res.json({
+      success: true,
+      messageId: result?.messageId || result?.waMessageId
+    });
+  } catch (error) {
+    console.error('❌ Send message failed:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
 
 // Conversation-based message fetching (preferred)
 router.get('/conversations/:id/messages', async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
+    
+    console.log('🔍 /conversations/:id/messages called:', { conversationId, params: req.params });
+    
+    if (!conversationId || isNaN(conversationId)) {
+      console.error('❌ Invalid conversationId:', conversationId);
+      return res.status(400).json({ error: 'Invalid conversation ID' });
+    }
+    
+    // Get messages
     const messages = await chatRepository.getMessagesByConversationId(conversationId);
+    
+    // Get conversation info
+    const conversation = await chatRepository.getConversationById(conversationId);
+    
+    // Get contact info separately
+    let contact = null;
+    if (conversation?.contact_id) {
+      contact = await chatRepository.getContactById(conversation.contact_id);
+    }
+    
+    console.log('✅ Messages retrieved:', { 
+      conversationId, 
+      messageCount: messages.length,
+      hasConversation: !!conversation,
+      hasContact: !!contact,
+      conversation: conversation,
+      contact: contact
+    });
 
     res.json({
       success: true,
-      data: messages
+      data: {
+        messages: messages,
+        conversation: conversation,
+        contact: contact
+      }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get messages by JID (for temporary conversations/non-saved contacts)
-router.get('/messages/jid/:jid', async (req, res) => {
-  try {
-    const { jid } = req.params;
-    const messages = await chatRepository.getMessagesByJid(jid);
-
-    res.json({
-      success: true,
-      data: messages
+    console.error('❌ ERROR in /conversations/:id/messages:', {
+      error: err.message,
+      stack: err.stack,
+      params: req.params
     });
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -49,40 +224,41 @@ router.post('/conversations/:id/mark-read', async (req, res) => {
 // Cleanup Unknown contacts
 router.post('/cleanup-unknown-contacts', async (req, res) => {
   try {
-    const { chatRepository } = require('../repositories/chatRepository.js');
-    const { getSQLPool } = require('../config/sqlserver.js');
-    const sql = require('mssql');
+    const { supabaseChatRepository: chatRepository } = require('../repositories/supabase-chatRepository.js');
+    const { getSupabaseChat } = require('../config/supabase-chat.js');
     
-    const pool = getSQLPool();
+    const supabase = getSupabaseChat();
     
-    const result = await pool.request()
-      .query(`
-        UPDATE contacts
-        SET display_name = phone_number
-        WHERE display_name = 'Unknown'
-      `);
+    const { error } = await supabase
+      .from('contacts')
+      .update({ display_name: supabase.raw('phone_number') })
+      .eq('display_name', 'Unknown');
+
+    if (error) {
+      throw error;
+    }
 
     res.json({ 
       success: true, 
-      updatedCount: result.rowsAffected[0] 
+      updatedCount: 0 // Supabase doesn't return affected count easily
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get conversations list with contact info
-router.get('/conversations', async (req, res) => {
-  try {
-    const conversations = await chatRepository.getConversationsWithContacts();
-    res.json({
-      success: true,
-      data: conversations
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Get conversations list with contact info - DEPRECATED - use /contacts-with-conversations instead
+// router.get('/conversations', async (req, res) => {
+//   try {
+//     const conversations = await chatRepository.getConversationsWithContacts();
+//     res.json({
+//       success: true,
+//       data: conversations
+//     });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
 // Start new conversation by phone
 router.post('/conversations/start', async (req, res) => {
@@ -174,24 +350,40 @@ router.post('/conversations/:id/save-contact', async (req, res) => {
 // Get contacts with conversations (paginated)
 router.get('/contacts-with-conversations', async (req, res) => {
   try {
+    console.log('🔍 /contacts-with-conversations called with query:', req.query);
+    
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
     const offset = (page - 1) * limit;
+
+    console.log('� /contacts-with-conversations called:', { page, limit, offset });
     
-    const contacts = await chatRepository.getContactsWithConversationsPaginated(offset, limit);
-    const totalCount = await chatRepository.getContactsWithConversationsCount();
-    
-    res.json({ 
-      success: true, 
+    const [contacts, totalCount] = await Promise.all([
+      chatRepository.getContactsWithConversationsPaginated(offset, limit),
+      chatRepository.getContactsWithConversationsCount()
+    ]);
+
+    console.log('✅ Contacts retrieved:', { 
+      count: contacts.length,
+      totalCount,
+      sampleContact: contacts[0] || 'No contacts found'
+    });
+
+    res.json({
+      success: true,
       data: contacts,
       pagination: {
         page,
         limit,
         total: totalCount,
-        hasMore: offset + limit < totalCount
+        totalPages: Math.ceil(totalCount / limit)
       }
     });
   } catch (err) {
+    console.error('❌ ERROR in /contacts-with-conversations:', {
+      error: err.message,
+      stack: err.stack
+    });
     res.status(500).json({ error: err.message });
   }
 });
@@ -454,6 +646,71 @@ router.post('/contacts/merge-jid', async (req, res) => {
   }
 });
 
+// Merge ALL conversations from one contact to another contact
+router.post('/contacts/merge-all-conversations', async (req, res) => {
+  try {
+    const { fromContactId, toContactId } = req.body;
+
+    if (!fromContactId || !toContactId) {
+      return res.status(400).json({ error: 'From contact ID and to contact ID are required' });
+    }
+
+    if (fromContactId === toContactId) {
+      return res.status(400).json({ error: 'Cannot merge a contact with itself' });
+    }
+
+    // Get all conversations for the source contact
+    const conversations = await chatRepository.getConversationsByContact(fromContactId);
+    
+    if (!conversations || conversations.length === 0) {
+      return res.status(404).json({ error: 'No conversations found for source contact' });
+    }
+
+    const mergeResults = [];
+    
+    // Merge each conversation to the target contact
+    for (const conversation of conversations) {
+      try {
+        // Link conversation to target contact
+        await chatRepository.mapJidToContact(conversation.jid, toContactId);
+        
+        // Update primary JID if needed (use first conversation's JID as primary)
+        if (mergeResults.length === 0) {
+          await chatRepository.updatePrimaryJid(toContactId, conversation.jid);
+        }
+        
+        mergeResults.push({
+          conversationId: conversation.conversation_id,
+          jid: conversation.jid,
+          success: true
+        });
+      } catch (error) {
+        console.error(`Failed to merge conversation ${conversation.conversation_id}:`, error);
+        mergeResults.push({
+          conversationId: conversation.conversation_id,
+          jid: conversation.jid,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    // Clean up the old contact (optional - you might want to keep it for history)
+    // await chatRepository.deleteContact(fromContactId);
+
+    res.json({ 
+      success: true, 
+      mergedConversations: mergeResults,
+      totalConversations: conversations.length,
+      successfulMerges: mergeResults.filter(r => r.success).length,
+      message: `Successfully merged ${mergeResults.filter(r => r.success).length}/${conversations.length} conversations` 
+    });
+  } catch (err) {
+    console.error('MERGE ALL CONVERSATIONS ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Create new contact and merge with @lid JID
 router.post('/contacts/merge-lid-with-new', async (req, res) => {
   try {
@@ -572,76 +829,67 @@ router.get('/conversations/:id/main-participant', async (req, res) => {
   try {
     const conversationId = req.params.id;
     
-    const pool = await getSQLPool();
+    const supabase = getSupabaseChat();
     
     // Get the conversation details
-    const conversation = await pool.request()
-      .input('conversationId', sql.Int, conversationId)
-      .query(`
-        SELECT c.jid, c.contact_id 
-        FROM conversations c 
-        WHERE c.id = @conversationId
-      `);
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('jid, contact_id')
+      .eq('id', conversationId)
+      .single();
     
-    if (conversation.recordset.length === 0) {
+    if (convError || !conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
     
-    const conv = conversation.recordset[0];
-    
     // If it's not a @g.us conversation, return itself
-    if (!conv.jid.endsWith('@g.us')) {
+    if (!conversation.jid.endsWith('@g.us')) {
       return res.json({
-        jid: conv.jid,
-        contact_id: conv.contact_id
+        jid: conversation.jid,
+        contact_id: conversation.contact_id
       });
     }
     
     // For @g.us conversations, get the latest message to extract participant info
-    const latestMessage = await pool.request()
-      .input('conversationId', sql.Int, conversationId)
-      .query(`
-        SELECT TOP 1 cm.raw_message, cm.jid as participant_jid
-        FROM chat_messages cm
-        WHERE cm.conversation_id = @conversationId
-        AND cm.raw_message IS NOT NULL
-        AND cm.from_me = 0
-        ORDER BY cm.message_timestamp DESC
-      `);
+    const { data: latestMessage, error: msgError } = await supabase
+      .from('chat_messages')
+      .select('raw_message, jid')
+      .eq('conversation_id', conversationId)
+      .not('raw_message', 'is', null)
+      .eq('from_me', false)
+      .order('message_timestamp', { ascending: false })
+      .limit(1)
+      .single();
     
-    if (latestMessage.recordset.length > 0) {
-      const message = latestMessage.recordset[0];
+    if (latestMessage && !msgError) {
       let pushName = null;
-      let participantJid = message.participant_jid;
+      let participantJid = latestMessage.jid;
       
       try {
         // Parse the raw WhatsApp message to extract pushName
-        const rawMessage = JSON.parse(message.raw_message);
+        const rawMessage = JSON.parse(latestMessage.raw_message);
         pushName = rawMessage.pushName || rawMessage.senderName || null;
         
         // If participant JID is available, try to get contact info
         let contactInfo = null;
         if (participantJid) {
-          const contactQuery = await pool.request()
-            .input('jid', sql.NVarChar, participantJid)
-            .query(`
-              SELECT c.id, c.display_name, c.phone_number, c.is_auto_generated
-              FROM contacts c
-              WHERE c.primary_jid = @jid
-              OR c.id IN (
-                SELECT jm.contact_id FROM jid_mappings jm WHERE jm.jid = @jid
-              )
-            `);
+          const { data: contactData } = await supabase
+            .from('contacts')
+            .select('id, display_name, phone_number, is_auto_generated')
+            .or(`primary_jid.eq.${participantJid},id.in.(
+              select jm.contact_id from jid_mappings jm where jm.jid = ${participantJid}
+            )`)
+            .single();
           
-          if (contactQuery.recordset.length > 0) {
-            contactInfo = contactQuery.recordset[0];
+          if (contactData) {
+            contactInfo = contactData;
           }
         }
         
         return res.json({
-          id: conv.id,
-          jid: participantJid || conv.jid,
-          contact_id: contactInfo?.id || conv.contact_id,
+          id: conversation.id,
+          jid: participantJid || conversation.jid,
+          contact_id: contactInfo?.id || conversation.contact_id,
           display_name: contactInfo?.display_name || pushName || 'Unknown',
           phone_number: contactInfo?.phone_number,
           is_auto_generated: contactInfo?.is_auto_generated || 0,
@@ -654,39 +902,32 @@ router.get('/conversations/:id/main-participant', async (req, res) => {
     }
     
     // Fallback: Find the main participant (WhatsApp JID or @lid) linked to this contact
-    const mainParticipant = await pool.request()
-      .input('contactId', sql.Int, conv.contact_id)
-      .input('gusJid', sql.NVarChar, conv.jid)
-      .query(`
-        SELECT c.id, c.jid, c.contact_id, co.display_name, co.phone_number
-        FROM conversations c
-        LEFT JOIN contacts co ON c.contact_id = co.id
-        WHERE c.contact_id = @contactId 
-        AND c.jid != @gusJid
-        AND (c.jid LIKE '%@s.whatsapp.net' OR c.jid LIKE '%@lid')
-        ORDER BY 
-          CASE 
-            WHEN c.jid LIKE '%@lid' THEN 1
-            WHEN c.jid LIKE '%@s.whatsapp.net' THEN 2
-            ELSE 3
-          END
-        LIMIT 1
-      `);
+    const { data: mainParticipant } = await supabase
+      .from('conversations')
+      .select(`
+        id, jid, contact_id,
+        contacts!left(display_name, phone_number)
+      `)
+      .eq('contact_id', conversation.contact_id)
+      .neq('jid', conversation.jid)
+      .or('jid.like.%@s.whatsapp.net,jid.like.%@lid')
+      .order('jid', { ascending: false })
+      .limit(1)
+      .single();
     
-    if (mainParticipant.recordset.length > 0) {
-      const participant = mainParticipant.recordset[0];
+    if (mainParticipant) {
       return res.json({
-        id: participant.id,
-        jid: participant.jid,
-        contact_id: participant.contact_id,
-        display_name: participant.display_name || 'Unknown',
-        phone_number: participant.phone_number
+        id: mainParticipant.id,
+        jid: mainParticipant.jid,
+        contact_id: mainParticipant.contact_id,
+        display_name: mainParticipant.contacts?.display_name || 'Unknown',
+        phone_number: mainParticipant.contacts?.phone_number
       });
     } else {
       // If no main participant found, return the @g.us itself
       return res.json({
-        jid: conv.jid,
-        contact_id: conv.contact_id
+        jid: conversation.jid,
+        contact_id: conversation.contact_id
       });
     }
     
@@ -761,6 +1002,519 @@ router.get('/jid-contact/:jid', async (req, res) => {
   } catch (err) {
     console.error('GET JID CONTACT ERROR:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Get dashboard stats from Supabase
+router.get('/dashboard', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString();
+    
+    // Get today's leads count
+    const { data: leadsData, error: leadsError } = await supabase
+      .from('dealer_leads')
+      .select('id')
+      .gte('created_at', todayIso);
+    
+    // Get today's offerings count
+    const { data: offeringsData, error: offeringsError } = await supabase
+      .from('distributor_offerings')
+      .select('id')
+      .gte('created_at', todayIso);
+    
+    // Get today's ignored messages count
+    const { data: ignoredData, error: ignoredError } = await supabase
+      .from('ignored_messages')
+      .select('id')
+      .gte('created_at', todayIso);
+    
+    // Get recent activity (last 10 messages from all tables)
+    const { data: recentLeads, error: recentLeadsError } = await supabase
+      .from('dealer_leads')
+      .select('id, created_at, raw_message, sender, classification')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    const { data: recentOfferings, error: recentOfferingsError } = await supabase
+      .from('distributor_offerings')
+      .select('id, created_at, raw_message, sender, classification')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    // Combine and sort recent activity
+    const recentActivity = [
+      ...(recentLeads || []).map(item => ({ ...item, type: 'lead' })),
+      ...(recentOfferings || []).map(item => ({ ...item, type: 'offering' }))
+    ]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 10);
+    
+    const stats = {
+      leadsToday: leadsData?.length || 0,
+      offeringsToday: offeringsData?.length || 0,
+      ignoredToday: ignoredData?.length || 0,
+      recentActivity: recentActivity.map(item => ({
+        id: item.id.toString(),
+        sender: item.sender || 'Unknown',
+        preview: item.raw_message ? item.raw_message.substring(0, 100) + '...' : '',
+        timestamp: item.created_at,
+        classification: item.classification || 'unknown'
+      }))
+    };
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Dashboard endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+// Get available brands from Supabase
+router.get('/brands', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    
+    // Get unique brands from dealer_leads
+    const { data: leadsBrands, error: leadsError } = await supabase
+      .from('dealer_leads')
+      .select('brand')
+      .not('brand', 'is', null);
+    
+    // Get unique brands from distributor_offerings
+    const { data: offeringsBrands, error: offeringsError } = await supabase
+      .from('distributor_offerings')
+      .select('brand')
+      .not('brand', 'is', null);
+    
+    // Combine and deduplicate brands
+    const allBrands = [
+      ...(leadsBrands || []).map(item => item.brand),
+      ...(offeringsBrands || []).map(item => item.brand)
+    ].filter((brand, index, self) => brand && self.indexOf(brand) === index);
+    
+    res.json({
+      success: true,
+      data: allBrands.sort()
+    });
+  } catch (error) {
+    console.error('Brands endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch brands' });
+  }
+});
+
+// Get available models for a brand from Supabase
+router.get('/models/:brand', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { brand } = req.params;
+    
+    // Get unique models from dealer_leads for this brand
+    const { data: leadsModels, error: leadsError } = await supabase
+      .from('dealer_leads')
+      .select('model')
+      .eq('brand', brand)
+      .not('model', 'is', null);
+    
+    // Get unique models from distributor_offerings for this brand
+    const { data: offeringsModels, error: offeringsError } = await supabase
+      .from('distributor_offerings')
+      .select('model')
+      .eq('brand', brand)
+      .not('model', 'is', null);
+    
+    // Combine and deduplicate models
+    const allModels = [
+      ...(leadsModels || []).map(item => item.model),
+      ...(offeringsModels || []).map(item => item.model)
+    ].filter((model, index, self) => model && self.indexOf(model) === index);
+    
+    res.json({
+      success: true,
+      data: allModels.sort()
+    });
+  } catch (error) {
+    console.error('Models endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch models' });
+  }
+});
+
+// Get leads from Supabase (replaces SQL Server endpoint)
+router.get('/leads', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { page = 1, limit = 30 } = req.query;
+    const offset = (page - 1) * limit;
+    
+    const { data, error } = await supabase
+      .from('dealer_leads')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, limit);
+    
+    if (error) {
+      console.error('Error fetching leads:', error);
+      return res.status(500).json({ error: 'Failed to fetch leads' });
+    }
+    
+    // Get total count
+    const { count } = await supabase
+      .from('dealer_leads')
+      .select('*', { count: 'exact', head: true });
+    
+    // Transform dealer_leads data to match frontend Message interface
+    const transformedData = (data || []).map(lead => ({
+      id: lead.id.toString(),
+      wa_message_id: lead.wa_message_id,
+      sender: lead.sender || 'Unknown',
+      senderNumber: lead.chat_id || '',
+      preview: lead.raw_message ? lead.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: lead.raw_message || '',
+      classification: 'lead',
+      detectedBrands: lead.brand ? [lead.brand] : [],
+      timestamp: lead.created_at || new Date().toISOString(),
+      confidence: lead.confidence || 0,
+      parsedData: lead.brand ? {
+        brand: lead.brand,
+        model: lead.model,
+        ram: lead.ram,
+        storage: lead.storage,
+        quantity: lead.quantity,
+        price: lead.price,
+        gst: lead.gst,
+        dispatch: lead.dispatch,
+        color: lead.colors ? (typeof lead.colors === 'string' ? JSON.parse(lead.colors) : lead.colors) : undefined,
+        condition: lead.condition
+      } : undefined,
+      whatsappDeepLink: lead.chat_id ? `https://wa.me/${lead.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: lead.chat_id,
+      chatType: lead.chat_type
+    }));
+    
+    res.json({
+      success: true,
+      data: transformedData,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Leads endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch leads' });
+  }
+});
+
+// Get offerings from Supabase (replaces SQL Server endpoint)
+router.get('/offerings', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { page = 1, limit = 30 } = req.query;
+    const offset = (page - 1) * limit;
+    
+    const { data, error } = await supabase
+      .from('distributor_offerings')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, limit);
+    
+    if (error) {
+      console.error('Error fetching offerings:', error);
+      return res.status(500).json({ error: 'Failed to fetch offerings' });
+    }
+    
+    // Get total count
+    const { count } = await supabase
+      .from('distributor_offerings')
+      .select('*', { count: 'exact', head: true });
+    
+    // Transform distributor_offerings data to match frontend Message interface
+    const transformedData = (data || []).map(offering => ({
+      id: offering.id.toString(),
+      wa_message_id: offering.wa_message_id,
+      sender: offering.sender || 'Unknown',
+      senderNumber: offering.chat_id || '',
+      preview: offering.raw_message ? offering.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: offering.raw_message || '',
+      classification: 'offering',
+      detectedBrands: offering.brand ? [offering.brand] : [],
+      timestamp: offering.created_at || new Date().toISOString(),
+      confidence: offering.confidence || 0,
+      parsedData: offering.brand ? {
+        brand: offering.brand,
+        model: offering.model,
+        ram: offering.ram,
+        storage: offering.storage,
+        quantity: offering.quantity,
+        price: offering.price,
+        gst: offering.gst,
+        dispatch: offering.dispatch,
+        color: offering.colors ? (typeof offering.colors === 'string' ? JSON.parse(offering.colors) : offering.colors) : undefined,
+        condition: offering.condition
+      } : undefined,
+      whatsappDeepLink: offering.chat_id ? `https://wa.me/${offering.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: offering.chat_id,
+      chatType: offering.chat_type
+    }));
+    
+    res.json({
+      success: true,
+      data: transformedData,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Offerings endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch offerings' });
+  }
+});
+
+// Get ignored messages from Supabase (replaces SQL Server endpoint)
+router.get('/ignored', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { page = 1, limit = 30 } = req.query;
+    const offset = (page - 1) * limit;
+    
+    const { data, error } = await supabase
+      .from('ignored_messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, limit);
+    
+    if (error) {
+      console.error('Error fetching ignored messages:', error);
+      return res.status(500).json({ error: 'Failed to fetch ignored messages' });
+    }
+    
+    // Get total count
+    const { count } = await supabase
+      .from('ignored_messages')
+      .select('*', { count: 'exact', head: true });
+    
+    // Transform ignored_messages data to match frontend Message interface
+    const transformedData = (data || []).map(ignored => ({
+      id: ignored.id.toString(),
+      wa_message_id: ignored.wa_message_id,
+      sender: ignored.sender || 'Unknown',
+      senderNumber: ignored.chat_id || '',
+      preview: ignored.raw_message ? ignored.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: ignored.raw_message || '',
+      classification: 'ignored',
+      detectedBrands: [],
+      timestamp: ignored.created_at || new Date().toISOString(),
+      confidence: ignored.confidence || 0,
+      parsedData: undefined,
+      whatsappDeepLink: ignored.chat_id ? `https://wa.me/${ignored.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: ignored.chat_id,
+      chatType: ignored.chat_type
+    }));
+    
+    res.json({
+      success: true,
+      data: transformedData,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Ignored messages endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch ignored messages' });
+  }
+});
+
+// Get lead by ID from Supabase (replaces SQL Server endpoint)
+router.get('/leads/:id', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('dealer_leads')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching lead:', error);
+      return res.status(500).json({ error: 'Failed to fetch lead' });
+    }
+    
+    if (!data) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+    
+    // Transform dealer_leads data to match frontend Message interface
+    const transformedData = {
+      id: data.id.toString(),
+      wa_message_id: data.wa_message_id,
+      sender: data.sender || 'Unknown',
+      senderNumber: data.chat_id || '',
+      preview: data.raw_message ? data.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: data.raw_message || '',
+      classification: 'lead',
+      detectedBrands: data.brand ? [data.brand] : [],
+      timestamp: data.created_at || new Date().toISOString(),
+      confidence: data.confidence || 0,
+      parsedData: data.brand ? {
+        brand: data.brand,
+        model: data.model,
+        ram: data.ram,
+        storage: data.storage,
+        quantity: data.quantity,
+        price: data.price,
+        gst: data.gst,
+        dispatch: data.dispatch,
+        color: data.colors ? (typeof data.colors === 'string' ? JSON.parse(data.colors) : data.colors) : undefined,
+        condition: data.condition
+      } : undefined,
+      whatsappDeepLink: data.chat_id ? `https://wa.me/${data.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: data.chat_id,
+      chatType: data.chat_type
+    };
+    
+    res.json({
+      success: true,
+      data: transformedData
+    });
+  } catch (error) {
+    console.error('Lead by ID endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch lead' });
+  }
+});
+
+// Get offering by ID from Supabase (replaces SQL Server endpoint)
+router.get('/offerings/:id', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('distributor_offerings')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching offering:', error);
+      return res.status(500).json({ error: 'Failed to fetch offering' });
+    }
+    
+    if (!data) {
+      return res.status(404).json({ error: 'Offering not found' });
+    }
+    
+    // Transform distributor_offerings data to match frontend Message interface
+    const transformedData = {
+      id: data.id.toString(),
+      wa_message_id: data.wa_message_id,
+      sender: data.sender || 'Unknown',
+      senderNumber: data.chat_id || '',
+      preview: data.raw_message ? data.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: data.raw_message || '',
+      classification: 'offering',
+      detectedBrands: data.brand ? [data.brand] : [],
+      timestamp: data.created_at || new Date().toISOString(),
+      confidence: data.confidence || 0,
+      parsedData: data.brand ? {
+        brand: data.brand,
+        model: data.model,
+        ram: data.ram,
+        storage: data.storage,
+        quantity: data.quantity,
+        price: data.price,
+        gst: data.gst,
+        dispatch: data.dispatch,
+        color: data.colors ? (typeof data.colors === 'string' ? JSON.parse(data.colors) : data.colors) : undefined,
+        condition: data.condition
+      } : undefined,
+      whatsappDeepLink: data.chat_id ? `https://wa.me/${data.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: data.chat_id,
+      chatType: data.chat_type
+    };
+    
+    res.json({
+      success: true,
+      data: transformedData
+    });
+  } catch (error) {
+    console.error('Offering by ID endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch offering' });
+  }
+});
+
+// Get ignored message by ID from Supabase (replaces SQL Server endpoint)
+router.get('/ignored/:id', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('ignored_messages')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching ignored message:', error);
+      return res.status(500).json({ error: 'Failed to fetch ignored message' });
+    }
+    
+    if (!data) {
+      return res.status(404).json({ error: 'Ignored message not found' });
+    }
+    
+    // Transform ignored_messages data to match frontend Message interface
+    const transformedData = {
+      id: data.id.toString(),
+      wa_message_id: data.wa_message_id,
+      sender: data.sender || 'Unknown',
+      senderNumber: data.chat_id || '',
+      preview: data.raw_message ? data.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: data.raw_message || '',
+      classification: 'ignored',
+      detectedBrands: [],
+      timestamp: data.created_at || new Date().toISOString(),
+      confidence: data.confidence || 0,
+      parsedData: undefined,
+      whatsappDeepLink: data.chat_id ? `https://wa.me/${data.chat_id.replace('@c.us', '')}` : '',
+      note: null,
+      fromMe: false,
+      chatId: data.chat_id,
+      chatType: data.chat_type
+    };
+    
+    res.json({
+      success: true,
+      data: transformedData
+    });
+  } catch (error) {
+    console.error('Ignored message by ID endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch ignored message' });
   }
 });
 

@@ -48,6 +48,10 @@ export interface Message {
   fromMe?: boolean;
   chatId?: string;
   chatType?: string;
+  // Group message fields
+  is_group_message?: boolean;
+  push_name?: string;
+  sender_jid?: string;
 }
 
 export interface Contact {
@@ -58,6 +62,8 @@ export interface Contact {
   leadsCount: number;
   offeringsCount: number;
   lastActive: string;
+  conversation_id?: number;
+  type?: 'direct' | 'group'; // Add type field for frontend
 }
 
 export interface DashboardStats {

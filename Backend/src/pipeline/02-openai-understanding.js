@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getOpenAIConfig } from '../config/openai.js';
 import { createLogger } from '../utils/logger.js';
 import { safeJSONParse } from '../utils/json-parser.js';
-import { logOpenAIUsage } from '../services/openai-usage-logger.js';
+// import { logOpenAIUsage } from '../services/openai-usage-logger.js';
 import { isMessageAlreadyProcessed, markMessageAsProcessed } from '../utils/message-dedupe.js';
 
 const logger = createLogger('OpenAI Understanding');
@@ -315,10 +315,11 @@ Output JSON ONLY.
         raw_message: payload.raw_text || null
       };
 
+      // DISABLED: SQL Server usage logging
       // Log asynchronously to avoid blocking
-      logOpenAIUsage(usageData).catch(err => {
-        logger.error('Failed to log OpenAI usage', { error: err });
-      });
+      // logOpenAIUsage(usageData).catch(err => {
+      //   logger.error('Failed to log OpenAI usage', { error: err });
+      // });
     }
 
     const parsed = safeJSONParse(content);

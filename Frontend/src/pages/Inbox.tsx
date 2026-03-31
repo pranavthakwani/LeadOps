@@ -5,6 +5,7 @@ import { MessageFilters } from '../components/inbox/MessageFilters';
 import { IgnoredMessageList } from '../components/inbox/IgnoredMessageList';
 import { Loader } from '../components/common/Loader';
 import { useMessages } from '../hooks/useMessages';
+import { useOfferings } from '../hooks/useOfferings';
 import { useIgnoredMessages } from '../hooks/useIgnoredMessages';
 import { useDebounce } from '../hooks/useDebounce';
 import { Search } from 'lucide-react';
@@ -43,17 +44,15 @@ export const Inbox: React.FC = () => {
   }, [searchParams, location.state]);
 
   const { messages, loading: messagesLoading, error: messagesError } = useMessages();
+  const { messages: offerings, loading: offeringsLoading, error: offeringsError } = useOfferings();
   const { messages: ignoredMessages, loading: ignoredLoading, error: ignoredError } = useIgnoredMessages();
 
   const filteredMessages = useMemo(() => {
-    let filtered = messages;
+    let filtered = activeTab === 'leads' ? messages : 
+                   activeTab === 'offerings' ? offerings : [];
 
-    // Filter by classification based on active tab
-    if (activeTab === 'leads') {
-      filtered = filtered.filter((msg) => msg.classification === 'lead');
-    } else if (activeTab === 'offerings') {
-      filtered = filtered.filter((msg) => msg.classification === 'offering');
-    }
+    // Filter by classification based on active tab (data is already filtered by endpoint)
+    // No need to filter by classification here since each endpoint returns the correct type
 
     if (timeFilter === 'today') {
       const today = new Date();
@@ -82,7 +81,7 @@ export const Inbox: React.FC = () => {
     }
 
     return filtered;
-  }, [messages, timeFilter, debouncedSearch, activeTab]);
+  }, [messages, offerings, timeFilter, debouncedSearch, activeTab]);
 
   const filteredIgnoredMessages = useMemo(() => {
     if (activeTab !== 'ignored') return [];
@@ -101,11 +100,21 @@ export const Inbox: React.FC = () => {
   }, [ignoredMessages, debouncedSearch, activeTab]);
 
   const getCurrentLoading = () => {
-    return activeTab === 'ignored' ? ignoredLoading : messagesLoading;
+    switch (activeTab) {
+      case 'leads': return messagesLoading;
+      case 'offerings': return offeringsLoading;
+      case 'ignored': return ignoredLoading;
+      default: return false;
+    }
   };
 
   const getCurrentError = () => {
-    return activeTab === 'ignored' ? ignoredError : messagesError;
+    switch (activeTab) {
+      case 'leads': return messagesError;
+      case 'offerings': return offeringsError;
+      case 'ignored': return ignoredError;
+      default: return null;
+    }
   };
 
   const getAccentColor = () => {

@@ -1,6 +1,7 @@
-import { initSQLServer } from './config/sqlserver.js';
+import { initSupabaseChat } from './config/supabase-chat.js';
 import { initOpenAI } from './config/openai.js';
 import { initWhatsAppConfig } from './config/whatsapp.js';
+// import { initSQLServer } from './config/sqlserver.js';
 import { getEnv } from './config/env.js';
 import { createApp } from './app.js';
 import { createLogger } from './utils/logger.js';
@@ -15,9 +16,9 @@ const start = async () => {
 
     logger.info('Initializing configurations');
     
-    // MUST initialize SQL Server first and wait for it
-    await initSQLServer();
-    logger.info('SQL Server initialized successfully');
+    // MUST initialize Supabase first and wait for it
+    initSupabaseChat();
+    logger.info('Supabase initialized successfully');
     
     initOpenAI();
     initWhatsAppConfig();

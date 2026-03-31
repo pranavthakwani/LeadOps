@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { getMessageByIdNew, getLeadById, getOfferingById, getIgnoredById } from '../services/api';
+import { chatApi } from '../services/chatApi';
 import { Button } from '../components/common/Button';
 import { ClassificationBadge } from '../components/inbox/ClassificationBadge';
 import { OfferingCard } from '../components/common/DetailCard';
@@ -80,6 +81,44 @@ export const MessageDetail: React.FC = () => {
           setMessage(data);
           // Cache the message
           globalMessageCache.current.set(id, data);
+          
+          // Check if this is a lead without a conversation - create one first
+          if (messageType === 'lead' && !data.chatId) {
+            console.log('🔄 Creating conversation from lead:', { leadId: id, leadData: data });
+            
+            try {
+              // Create conversation from lead data
+              const conversationResponse = await chatApi.createConversationFromLead({
+                contact_id: parseInt(data.id), // Use message.id as contact_id
+                jid: data.chatId || data.sender, // Use chatId or sender as JID
+                display_name: data.sender || 'Unknown', // Use sender as display name
+                phone_number: data.senderNumber, // Use senderNumber
+                message: data.preview || 'New lead from WhatsApp' // Use preview as message
+              });
+              
+              if (conversationResponse.success && conversationResponse.conversationId) {
+                console.log('✅ Created conversation from lead:', conversationResponse.conversationId);
+                
+                // Navigate to the newly created conversation
+                navigate(`/conversation/${conversationResponse.conversationId}`, {
+                  state: { 
+                    tab: 'leads', 
+                    timeFilter: originalTimeFilter,
+                    from: '/inbox',
+                    messageType: 'lead'
+                  }
+                });
+                
+                // Update the cached message with conversation ID
+                const updatedMessage = { ...data, chatId: conversationResponse.conversationId.toString() };
+                globalMessageCache.current.set(id, updatedMessage);
+                setMessage(updatedMessage);
+                return;
+              }
+            } catch (error) {
+              console.error('❌ Failed to create conversation from lead:', error);
+            }
+          }
         } else {
           console.error('Failed to fetch message: No data returned');
         }
@@ -119,7 +158,7 @@ export const MessageDetail: React.FC = () => {
     }
   };
 
-  const handleMouseDown = (_e: React.MouseEvent) => {
+  const handleMouseDown = () => {
     
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return;
@@ -237,7 +276,11 @@ export const MessageDetail: React.FC = () => {
           className="flex flex-col bg-[#efeae2] dark:bg-black"
           style={{ width: `${100 - leftPanelWidth}%` }}
         >
-          <ChatInterface message={message} targetMessageId={message.wa_message_id} />
+          <ChatInterface
+            conversationId={undefined} // Let ChatInterface find the conversation by JID
+            targetMessageId={message?.wa_message_id}
+            message={message || undefined}
+          />
         </div>
       </div>
     </div>
