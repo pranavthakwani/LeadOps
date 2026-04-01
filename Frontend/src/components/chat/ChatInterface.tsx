@@ -175,27 +175,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const messageRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
   const socketRef = useRef<Socket | null>(null);
 
-  // Helper function to check if message is from broadcast
-  const isBroadcastMessage = (message: DisplayMessage) => {
-    // Debug logging to see what data we have
-    console.log('🔍 Broadcast check:', {
-      conversationJid: conversationData?.jid,
-      messageSenderJid: message.senderJid,
-      sourceJid: conversationData?.source_jid,
-      conversationType: conversationData?.type,
-      isOutgoing: message.isOutgoing,
-      hasPushName: !!message.pushName,
-      hasSenderJid: !!message.senderJid
-    });
-    
-    // Multiple ways to detect broadcast messages:
-    return conversationData?.jid?.includes('@broadcast') || // Direct broadcast JID
-           message.senderJid?.includes('@broadcast') || // Message has broadcast JID
-           (conversationData?.source_jid?.includes('@broadcast')) || // Conversation has broadcast source
-           (conversationData?.type === 'individual' && !message.isOutgoing && message.pushName && message.senderJid) || // Individual conversation with pushName AND senderJid (strong broadcast indicator)
-           (!message.isOutgoing && message.pushName && conversationData?.type === 'individual'); // Incoming message with pushName in individual chat (most common broadcast scenario)
-  };
-
   // Helper function to format display name with proper styling for pushName vs saved name
   const formatDisplayName = (conversationData: any) => {
     // For group conversations, prioritize group_name over other fields
@@ -1444,20 +1423,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                         {/* Time */}
                         <div className="flex justify-end items-end gap-1 mt-1">
-                          {/* Broadcast indicator */}
-                          {!chatMessage.isOutgoing && (() => {
-                            const shouldShow = isBroadcastMessage(chatMessage);
-                            console.log('🔊 Broadcast icon check:', { 
-                              messageId: chatMessage.id, 
-                              isOutgoing: chatMessage.isOutgoing, 
-                              shouldShow,
-                              hasPushName: !!chatMessage.pushName,
-                              senderJid: chatMessage.senderJid
-                            });
-                            return shouldShow;
-                          })() && (
-                            <Volume2 className="w-3 h-3 opacity-40" />
-                          )}
                           <span className="text-[10px] opacity-60">
                             {formatISTTime(chatMessage.timestamp)}
                           </span>
