@@ -138,7 +138,7 @@ export function enqueueProfilePicFetch(contact) {
     return;
   }
 
-  // 🔴 CRITICAL: CHECK 7-DAY RULE BEFORE ANYTHING ELSE
+  // 🔴 CRITICAL: CHECK 30-DAY RULE BEFORE ANYTHING ELSE
   // 🔴 FALLBACK: Handle missing database columns
   const profileFetched = contact.profile_pic_fetched === true;
   const lastUpdated = contact.profile_pic_last_updated;
@@ -146,10 +146,10 @@ export function enqueueProfilePicFetch(contact) {
   const shouldFetch =
     !profileFetched ||
     !lastUpdated ||
-    Date.now() - new Date(lastUpdated).getTime() > 7 * 24 * 60 * 60 * 1000;
+    Date.now() - new Date(lastUpdated).getTime() > 30 * 24 * 60 * 60 * 1000;
     
   if (!shouldFetch) {
-    logger.info('🛑 Profile pic fetch blocked - recently fetched (7-day rule):', { 
+    logger.info('🛑 Profile pic fetch blocked - recently fetched (30-day rule):', { 
       contactId: contact.id,
       lastUpdated: lastUpdated,
       daysSince: Math.floor((Date.now() - new Date(lastUpdated).getTime()) / (24 * 60 * 60 * 1000)),
@@ -169,7 +169,7 @@ export function enqueueProfilePicFetch(contact) {
 
   logger.info('✅ Profile pic fetch allowed - adding to queue:', { 
     contactId: contact.id,
-    reason: contact.profile_pic_fetched !== true ? 'never fetched' : 'older than 7 days'
+    reason: contact.profile_pic_fetched !== true ? 'never fetched' : 'older than 30 days'
   });
 
   profilePicQueue.push({
