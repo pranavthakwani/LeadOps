@@ -98,7 +98,7 @@ export const chatApi = {
     }
   },
 
-  // Get conversations list with contact info
+  // Get all conversations list with contact info (no pagination - show all)
   async getConversations(): Promise<Contact[]> {
     try {
       const response = await axios.get(`${API_BASE_URL}/contacts-with-conversations`);

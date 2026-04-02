@@ -15,19 +15,27 @@ interface Contact {
   phone_number: string;
   primary_jid: string;
   is_auto_generated?: boolean;
-  conversation_id: number | null;
-  last_message_at: string | null;
-  unread_count: number;
+  conversation_id?: number | undefined;
+  last_message_at?: string | null | number | undefined;
+  unread_count?: number | undefined;
 }
 
-interface MergedContact extends Contact {
+interface MergedContact {
+  id: number;
+  display_name: string;
+  phone_number: string;
   primary_jid: string;
+  is_auto_generated?: boolean;
+  conversation_id?: number | undefined;
+  last_message_at?: string | null | number | undefined;
+  unread_count?: number | undefined;
   all_conversation_ids: number[];
-  total_unread_count: number;
+  total_unread_count: number | undefined;
   last_message_preview?: string;
   last_message_from_me?: boolean;
   last_message_text?: string;
   profile_pic_url?: string;
+  type?: 'direct' | 'group';
 }
 
 export const ContactsPage: React.FC = () => {
@@ -80,7 +88,7 @@ export const ContactsPage: React.FC = () => {
 
   // Handle merge completion
   const handleMergeComplete = async () => {
-    await loadContacts(1, false);
+    await loadContacts();
     setUnifiedModalOpen(false);
   };
 
@@ -131,19 +139,29 @@ export const ContactsPage: React.FC = () => {
     socket.on('contact_update', (data: any) => {
       console.log('Contact update received:', data);
       
-      setContacts(prev => 
-        prev.map(contact => 
+      setContacts(prev => {
+        // Update the specific contact
+        const updatedContacts = prev.map(contact => 
           contact.id === data.contactId 
             ? { 
                 ...contact, 
-                last_message_preview: data.last_message_preview,
-                last_message_at: data.last_message_at,
-                total_unread_count: data.unread_count,
+                last_message_preview: data.messagePreview || data.last_message_preview,
+                last_message_at: new Date().toISOString(), // Update timestamp to move to top
+                total_unread_count: data.unread_count || (contact.total_unread_count || 0) + 1,
                 conversation_id: data.conversation_id
               }
             : contact
-        )
-      );
+        );
+        
+        // Move the updated contact to the top (WhatsApp behavior)
+        const updatedContact = updatedContacts.find(c => c.id === data.contactId);
+        if (updatedContact) {
+          const otherContacts = updatedContacts.filter(c => c.id !== data.contactId);
+          return [updatedContact, ...otherContacts];
+        }
+        
+        return updatedContacts;
+      });
     });
 
     socket.on('disconnect', () => {
@@ -155,18 +173,14 @@ export const ContactsPage: React.FC = () => {
     };
   }, []);
 
-  const loadContacts = async (pageNum: number = 1, isLoadMore: boolean = false) => {
+  const loadContacts = async () => {
     try {
-      if (isLoadMore) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
+      setLoading(true);
 
-      const result = await chatApi.getContactsPaginated(pageNum, 30);
+      const contacts = await chatApi.getConversations();
       
       // Backend returns unique contacts with all_conversation_ids as comma-separated string
-      const contacts = result.contacts.map(contact => ({
+      const formattedContacts = contacts.map(contact => ({
         ...contact,
         total_unread_count: contact.unread_count,
         all_conversation_ids: Array.isArray(contact.all_conversation_ids) 
@@ -176,33 +190,19 @@ export const ContactsPage: React.FC = () => {
         last_message_from_me: !!contact.last_message_from_me
       }));
       
-      // Backend returns unique contacts, no need to merge
       // Remove duplicates by ID to prevent React key warnings
-      const uniqueContacts = contacts.filter((contact, index, self) => 
+      const uniqueContacts = formattedContacts.filter((contact, index, self) => 
         self.findIndex(c => c.id === contact.id) === index
       );
       
-      if (isLoadMore) {
-        // Append to existing contacts and remove duplicates
-        setContacts(prev => {
-          const combined = [...prev, ...uniqueContacts];
-          return combined.filter((contact, index, self) => 
-            self.findIndex(c => c.id === contact.id) === index
-          );
-        });
-      } else {
-        // Replace all contacts
-        setContacts(uniqueContacts);
-      }
-
-      setHasMore(result.pagination.hasMore);
-      setPage(pageNum);
+      // Set all contacts at once
+      setContacts(uniqueContacts);
+      setHasMore(false); // No more to load
       
     } catch (error) {
       console.error('Error loading contacts:', error);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   };
 
@@ -225,23 +225,17 @@ export const ContactsPage: React.FC = () => {
     }
 
     setSelectedContact(contact);
-    // Mark all conversations as read when contact is selected
+    // Mark only THIS contact's conversations as read when contact is selected
     await Promise.all(
       contact.all_conversation_ids.map(convId => chatApi.markConversationRead(convId))
     );
     
-    // Update local state to reflect read status
+    // Update local state to reflect read status - ONLY for this contact
     setContacts(prev => prev.map(c => 
-      c.phone_number === contact.phone_number 
+      c.id === contact.id 
         ? { ...c, total_unread_count: 0 }
-        : c
+        : c  // Keep other contacts' unread counts unchanged
     ));
-  };
-
-  const loadMore = () => {
-    if (!loadingMore && hasMore) {
-      loadContacts(page + 1, true);
-    }
   };
 
   const handleEditContact = (contact: Contact) => {
@@ -339,15 +333,7 @@ export const ContactsPage: React.FC = () => {
         </div>
 
         {/* Contacts List */}
-        <div 
-          className="flex-1 overflow-y-auto min-h-0"
-          onScroll={(e) => {
-            const element = e.currentTarget;
-            if (element.scrollHeight - element.scrollTop <= element.clientHeight + 100) {
-              loadMore();
-            }
-          }}
-        >
+        <div className="flex-1 overflow-y-auto min-h-0">
           {loading ? (
             <div className="p-4">
               <Loader type="contacts" />
@@ -418,9 +404,9 @@ export const ContactsPage: React.FC = () => {
                         </button>
                       )}
                       {/* Removed automatic Business badge for LID contacts */}
-                      {contact.total_unread_count > 0 && (
+                      {(contact.total_unread_count || 0) > 0 && (
                         <span className="bg-[#00a884] text-white text-xs rounded-full px-2 py-1">
-                          {contact.total_unread_count}
+                          {contact.total_unread_count || 0}
                         </span>
                       )}
                     </div>

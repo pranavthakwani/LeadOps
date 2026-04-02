@@ -347,21 +347,18 @@ router.post('/conversations/:id/save-contact', async (req, res) => {
   }
 });
 
-// Get contacts with conversations (paginated)
+// Get all contacts with conversations (no pagination - show all)
 router.get('/contacts-with-conversations', async (req, res) => {
   try {
     console.log('🔍 /contacts-with-conversations called with query:', req.query);
     
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 30;
-    const offset = (page - 1) * limit;
-
-    console.log('� /contacts-with-conversations called:', { page, limit, offset });
-    
+    // Get ALL contacts - no pagination
     const [contacts, totalCount] = await Promise.all([
-      chatRepository.getContactsWithConversationsPaginated(offset, limit),
+      chatRepository.getContactsWithConversationsPaginated(0, 10000), // Get all contacts
       chatRepository.getContactsWithConversationsCount()
     ]);
+
+    console.log('📄 /contacts-with-conversations called:', { all: true, count: contacts.length });
 
     console.log('✅ Contacts retrieved:', { 
       count: contacts.length,
@@ -371,13 +368,7 @@ router.get('/contacts-with-conversations', async (req, res) => {
 
     res.json({
       success: true,
-      data: contacts,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        totalPages: Math.ceil(totalCount / limit)
-      }
+      data: contacts
     });
   } catch (err) {
     console.error('❌ ERROR in /contacts-with-conversations:', {

@@ -3,7 +3,7 @@ import { getOfferings } from '../services/api';
 import type { Message } from '../types/message';
 
 // Cache for storing paginated data
-const offeringsCache = new Map<number, Message[]>();
+const offeringsCache = new Map<number, { messages: Message[]; totalCount: number }>();
 
 export const useOfferings = (page: number = 1, limit: number = 20) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -19,7 +19,9 @@ export const useOfferings = (page: number = 1, limit: number = 20) => {
       // Check cache first
       if (offeringsCache.has(page)) {
         console.log(`📄 Using cached offerings for page ${page}`);
-        setMessages(offeringsCache.get(page)!);
+        const cached = offeringsCache.get(page)!;
+        setMessages(cached.messages);
+        setTotalCount(cached.totalCount);
         setLoading(false);
         return;
       }
@@ -33,7 +35,10 @@ export const useOfferings = (page: number = 1, limit: number = 20) => {
         setTotalCount(pagination?.total || 0);
         
         // Cache the results
-        offeringsCache.set(page, data || []);
+        offeringsCache.set(page, { 
+          messages: data || [], 
+          totalCount: pagination?.total || 0 
+        });
         console.log(`💾 Cached offerings for page ${page}`);
       } else {
         throw new Error(response.error || 'Failed to fetch offerings');

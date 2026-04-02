@@ -3,7 +3,7 @@ import { getMessages } from '../services/api';
 import type { Message } from '../types/message';
 
 // Cache for storing paginated data
-const messageCache = new Map<number, Message[]>();
+const messageCache = new Map<number, { messages: Message[]; totalCount: number }>();
 
 export const useMessages = (page: number = 1, limit: number = 20) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -20,7 +20,9 @@ export const useMessages = (page: number = 1, limit: number = 20) => {
         // Check cache first
         if (messageCache.has(page)) {
           console.log(`📄 Using cached messages for page ${page}`);
-          setMessages(messageCache.get(page)!);
+          const cached = messageCache.get(page)!;
+          setMessages(cached.messages);
+          setTotalCount(cached.totalCount);
           setLoading(false);
           return;
         }
@@ -34,7 +36,10 @@ export const useMessages = (page: number = 1, limit: number = 20) => {
           setTotalCount(pagination?.total || 0);
           
           // Cache the results
-          messageCache.set(page, data || []);
+          messageCache.set(page, { 
+            messages: data || [], 
+            totalCount: pagination?.total || 0 
+          });
           console.log(`💾 Cached messages for page ${page}`);
         } else {
           throw new Error(response.error || 'Failed to fetch messages');

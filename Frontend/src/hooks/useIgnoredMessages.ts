@@ -3,7 +3,7 @@ import { getIgnored } from '../services/api';
 import type { Message } from '../types/message';
 
 // Cache for storing paginated data
-const ignoredCache = new Map<number, Message[]>();
+const ignoredCache = new Map<number, { messages: Message[]; totalCount: number }>();
 
 export const useIgnoredMessages = (page: number = 1, limit: number = 20) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -20,7 +20,9 @@ export const useIgnoredMessages = (page: number = 1, limit: number = 20) => {
         // Check cache first
         if (ignoredCache.has(page)) {
           console.log(`📄 Using cached ignored messages for page ${page}`);
-          setMessages(ignoredCache.get(page)!);
+          const cached = ignoredCache.get(page)!;
+          setMessages(cached.messages);
+          setTotalCount(cached.totalCount);
           setLoading(false);
           return;
         }
@@ -34,7 +36,10 @@ export const useIgnoredMessages = (page: number = 1, limit: number = 20) => {
           setTotalCount(pagination?.total || 0);
           
           // Cache the results
-          ignoredCache.set(page, data || []);
+          ignoredCache.set(page, { 
+            messages: data || [], 
+            totalCount: pagination?.total || 0 
+          });
           console.log(`💾 Cached ignored messages for page ${page}`);
         } else {
           throw new Error(response.error || 'Failed to fetch ignored messages');

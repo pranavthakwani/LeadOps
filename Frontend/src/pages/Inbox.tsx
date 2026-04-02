@@ -19,36 +19,65 @@ export const Inbox: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('leads');
   const [searchQuery, setSearchQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState<'today' | '24h' | 'week' | 'month' | 'all'>('today');
-  const [currentPage, setCurrentPage] = useState(1);
+  
+  // Load page state from localStorage or default to 1
+  const [currentPage, setCurrentPage] = useState(() => {
+    const savedTab = localStorage.getItem('inbox-active-tab') || 'leads';
+    const savedPage = localStorage.getItem(`inbox-page-${savedTab}`);
+    return savedPage ? parseInt(savedPage) : 1;
+  });
   const debouncedSearch = useDebounce(searchQuery);
   
   const ITEMS_PER_PAGE = 20;
+
+  // Save page state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(`inbox-page-${activeTab}`, currentPage.toString());
+  }, [currentPage, activeTab]);
+
+  // Save tab state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('inbox-active-tab', activeTab);
+  }, [activeTab]);
+
+  // Load tab state from localStorage on mount
+  useEffect(() => {
+    const savedTab = localStorage.getItem('inbox-active-tab');
+    if (savedTab && ['leads', 'offerings', 'ignored'].includes(savedTab)) {
+      setActiveTab(savedTab as TabType);
+    }
+  }, []);
 
   // Set active tab and time filter from URL query parameter on component mount
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     const timeParam = searchParams.get('timeFilter');
     
+    let newTab: TabType = 'leads';
     if (tabParam === 'lead' || tabParam === 'leads') {
-      setActiveTab('leads');
+      newTab = 'leads';
     } else if (tabParam === 'offering' || tabParam === 'offerings') {
-      setActiveTab('offerings');
+      newTab = 'offerings';
     } else if (tabParam === 'ignored') {
-      setActiveTab('ignored');
+      newTab = 'ignored';
     }
 
     // Only preserve time filter if coming from message detail (has state)
-    // Otherwise, reset to today for manual tab changes
+    // Otherwise, keep current filter (don't reset automatically)
     const isFromMessageDetail = (location.state as any)?.from === '/inbox';
     if (timeParam && ['today', '24h', 'week', 'month', 'all'].includes(timeParam) && isFromMessageDetail) {
       setTimeFilter(timeParam as any);
-    } else if (!isFromMessageDetail) {
-      setTimeFilter('today'); // Reset to today for manual tab changes
     }
+    // ❌ REMOVE: else if (!isFromMessageDetail) {
+    //   setTimeFilter('today'); // This was breaking pagination
+    // }
     
-    // Reset page when tab changes
-    setCurrentPage(1);
-  }, [searchParams, location.state]);
+    // Only set tab, don't reset page on navigation
+    if (newTab !== activeTab) {
+      setActiveTab(newTab);
+      // ❌ REMOVE: setCurrentPage(1) - don't reset on navigation
+    }
+  }, [searchParams, location.state]); // ❌ REMOVE: activeTab dependency to prevent loops
 
   const { messages, loading: messagesLoading, error: messagesError, totalCount: messagesTotalCount } = useMessages(currentPage, ITEMS_PER_PAGE);
   const { messages: offerings, loading: offeringsLoading, error: offeringsError, totalCount: offeringsTotalCount } = useOfferings(currentPage, ITEMS_PER_PAGE);
@@ -151,7 +180,10 @@ export const Inbox: React.FC = () => {
           {(['leads', 'offerings', 'ignored'] as TabType[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab);
+                setCurrentPage(1); // ✅ only reset page on user tab click
+              }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
                 activeTab === tab
                   ? tab === 'leads' 
