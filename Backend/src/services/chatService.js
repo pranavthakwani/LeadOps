@@ -2,7 +2,7 @@ import { createLogger } from '../utils/logger.js';
 import { supabaseChatRepository as chatRepository } from '../repositories/supabase-chatRepository.js';
 import { enqueueProfilePicFetch } from './profilePicService.js';
 import { processPipeline } from '../pipeline/index.js';
-import { extractText } from '../utils/messageUtils.js';
+import { extractText, extractMediaMetadata } from '../utils/messageUtils.js';
 import { parseJid, extractPhoneFromJid } from '../utils/jidUtils.js';
 import { isBusinessMessage } from './business-filter.js';
 
@@ -55,9 +55,12 @@ export const chatService = {
     // Extract actual text content
     const text = extractText(message);
     
-    // Skip messages with no actual content
-    if (!text || text.trim() === '') {
-      logger.debug('Skipping message with no text content', { 
+    // Extract media metadata
+    const mediaData = extractMediaMetadata(message);
+    
+    // Skip messages with no actual content (text or media)
+    if ((!text || text.trim() === '') && !mediaData) {
+      logger.debug('Skipping message with no text or media content', { 
         jid, 
         waMessageId,
         fromMe: message.key.fromMe 
@@ -65,8 +68,18 @@ export const chatService = {
       return;
     }
 
-    // Skip empty messages from self (delivery receipts, etc.)
-    if (message.key.fromMe && !text) {
+    // Don't skip media messages even if they have no text
+    if (!text && mediaData) {
+      logger.info('Processing media message without text', { 
+        jid, 
+        waMessageId,
+        mediaType: mediaData.type,
+        fromMe: message.key.fromMe 
+      });
+    }
+
+    // Skip empty messages from self (delivery receipts, etc.) unless it has media
+    if (message.key.fromMe && !text && !mediaData) {
       logger.debug('Skipping empty self message');
       return;
     }
@@ -120,8 +133,15 @@ export const chatService = {
     }
 
     // Store message with group support
+    console.log('🔍 Storing message with JIDs:', {
+      sourceJid, // Group JID
+      realJid,  // Participant JID
+      participantJid: message.key.participant,
+      isGroupMessage: sourceJid.endsWith('@g.us')
+    });
+    
     const conversationId = await chatRepository.insertMessage({
-      jid: realJid, // Use real participant JID for contact mapping
+      jid: sourceJid, // 🔥 CRITICAL: Use source JID (group JID) for conversation, not participant JID
       participantJid: message.key.participant || null, // Pass participant JID for group messages
       pushName: message.pushName || null, // Pass pushName for display
       waMessageId,
@@ -130,8 +150,22 @@ export const chatService = {
       timestamp,
       quotedMessageId: quotedId,
       quotedText, // Only store factual data
-      rawMessage: JSON.stringify(message) // Store full raw WhatsApp message for quoting
+      rawMessage: JSON.stringify(message), // Store full raw WhatsApp message for quoting
+      // 🎥🖼️🎵 Media metadata
+      mediaType: mediaData?.type || null,
+      mediaUrl: mediaData?.url || null,
+      mediaFilename: mediaData?.filename || null,
+      mediaFilesize: mediaData?.filesize || null,
+      mediaMimetype: mediaData?.mimetype || null,
+      mediaDuration: mediaData?.duration || null,
+      mediaWidth: mediaData?.width || null,
+      mediaHeight: mediaData?.height || null,
+      mediaPageCount: mediaData?.pageCount || null,
+      mediaThumbnailUrl: mediaData?.thumbnail || null,
+      mediaCaption: mediaData?.caption || null
     });
+
+    console.log('✅ Message stored with conversation ID:', conversationId);
 
     logger.info('Message stored in DB', { waMessageId, quotedId, quotedText, hasRawMessage: true });
 
@@ -170,7 +204,19 @@ export const chatService = {
         // Group message specific fields
         is_group_message: sourceJid.endsWith('@g.us') ? 1 : 0,
         push_name: message.pushName || null,
-        sender_jid: message.key.participant || null
+        sender_jid: message.key.participant || null,
+        // 🎥🖼️🎵 Media fields
+        media_type: mediaData?.type || null,
+        media_url: mediaData?.url || null,
+        media_filename: mediaData?.filename || null,
+        media_filesize: mediaData?.filesize || null,
+        media_mimetype: mediaData?.mimetype || null,
+        media_duration: mediaData?.duration || null,
+        media_width: mediaData?.width || null,
+        media_height: mediaData?.height || null,
+        media_page_count: mediaData?.pageCount || null,
+        media_thumbnail_url: mediaData?.thumbnail || null,
+        media_caption: mediaData?.caption || null
       };
       
       logger.info('Emitting new-message to Socket.IO', { 
@@ -331,9 +377,8 @@ export const chatService = {
 
     logger.info('Outgoing message stored in DB', { waMessageId, quotedMessageId, quotedText, hasRawMessage: true });
 
-    // Get conversation ID for socket emission
-    const conversation = await chatRepository.getConversationByJid(jid);
-    const conversationId = conversation?.id;
+    // 🔥 CRITICAL: Get resolved conversation ID for socket emission (handles merged contacts)
+    const conversationId = await chatRepository.resolveJidToConversation(jid);
 
     // Emit to Socket.IO for real-time updates using conversation_id
     if (global.io && conversationId) {
@@ -439,9 +484,12 @@ export const chatService = {
     // Extract actual text content
     const text = extractText(message);
     
-    // Skip messages with no actual content
-    if (!text || text.trim() === '') {
-      logger.debug('Skipping message with no text content', { 
+    // Extract media metadata
+    const mediaData = extractMediaMetadata(message);
+    
+    // Skip messages with no actual content (text or media)
+    if ((!text || text.trim() === '') && !mediaData) {
+      logger.debug('Skipping message with no text or media content', { 
         jid, 
         waMessageId,
         fromMe: message.key.fromMe 
@@ -449,8 +497,18 @@ export const chatService = {
       return;
     }
 
-    // Skip empty messages from self (delivery receipts, etc.)
-    if (message.key.fromMe && !text) {
+    // Don't skip media messages even if they have no text
+    if (!text && mediaData) {
+      logger.info('Processing media message without text', { 
+        jid, 
+        waMessageId,
+        mediaType: mediaData.type,
+        fromMe: message.key.fromMe 
+      });
+    }
+
+    // Skip empty messages from self (delivery receipts, etc.) unless it has media
+    if (message.key.fromMe && !text && !mediaData) {
       logger.debug('Skipping empty self message');
       return;
     }
@@ -565,7 +623,8 @@ export const chatService = {
       return;
     }
 
-    // Create or update contact only for valid user JIDs
+    // 🔥 CRITICAL: Unified identity resolution for both group and direct messages
+    // Ensure same user (same JID) gets same contact_id regardless of context
     let contactId = null;
     let contact = null;
     let isGroupMessage = false;
@@ -584,53 +643,87 @@ export const chatService = {
       logger.info('Processing group message', { groupJid: jid, participantJid: actualJid });
     }
     
-    if (actualJid.endsWith('@s.whatsapp.net') && phoneNumber) {
-      logger.info('Creating/updating contact for @s.whatsapp.net', { phoneNumber, pushName, isGroupMessage });
-      
-      // ✅ SMART PUSHNAME LOGIC: Only use pushName if contact needs improvement
-      let contactName = null;
-      if (pushName) {
-        const existingContact = await chatRepository.getContactByPhone(phoneNumber);
-        if (this.shouldUpdateContactName(existingContact, pushName)) {
-          contactName = pushName;
-          logger.info('Using pushName to update contact', { phoneNumber, pushName });
-        } else {
-          logger.debug('Keeping existing contact name', { phoneNumber, currentName: existingContact?.display_name, pushName });
-        }
+    // 🔥 CRITICAL: Clean pushName to prevent JSON string storage
+    let cleanPushName = pushName;
+    if (typeof pushName === 'string' && pushName.startsWith('{')) {
+      // If pushName is already a JSON string, parse it to extract the display_name
+      try {
+        const parsed = JSON.parse(pushName);
+        cleanPushName = parsed.display_name || pushName;
+        logger.info('🔧 Cleaned JSON pushName', { original: pushName, cleaned: cleanPushName });
+      } catch (e) {
+        logger.warn('Failed to parse JSON pushName', { pushName, error: e.message });
+        cleanPushName = pushName; // fallback to original
       }
+    }
+    
+    // 🔥 UNIFIED CONTACT RESOLUTION: Always use JID-based lookup first
+    // This ensures group participants and direct messages resolve to same contact
+    logger.info('🔍 UNIFIED IDENTITY RESOLUTION', { actualJid, phoneNumber, pushName: cleanPushName, isGroupMessage });
+    
+    // First try to find existing contact by JID (most reliable)
+    let existingContact = await chatRepository.getContactByJid(actualJid);
+    
+    if (!existingContact && phoneNumber) {
+      // Fallback: try phone number lookup for backward compatibility
+      existingContact = await chatRepository.getContactByPhone(phoneNumber);
+      logger.info('🔄 Fallback to phone lookup', { phoneNumber, found: !!existingContact });
+    }
+    
+    if (existingContact) {
+      contactId = existingContact.id;
+      contact = existingContact;
       
-      contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, contactName);
-      logger.info('Contact creation result', { contactId, phoneNumber, contactName });
+      // Smart name update logic
+      const shouldUpdateName = cleanPushName && cleanPushName !== 'Unknown' && 
+        (existingContact.is_auto_generated === true || 
+         !existingContact.display_name || 
+         existingContact.display_name === 'Unknown' ||
+         existingContact.display_name !== cleanPushName); // 🔥 CRITICAL: Only update if name actually changed
       
-      // ✅ FIX: Get the contact object for profile pic fetching
-      contact = await chatRepository.getContactById(contactId);
-      
-      // ✅ FIX: Only update primary_jid if changed
-      const currentContact = await chatRepository.getContactById(contactId);
-      if (!currentContact || currentContact.primary_jid !== actualJid) {
-        await chatRepository.updatePrimaryJid(contactId, actualJid);
-        logger.info('Updated primary_jid for contact', { contactId, actualJid });
+      logger.info('🔍 DEBUG: Contact name update check', { 
+        contactId, 
+        existingName: existingContact.display_name, 
+        pushName: cleanPushName, 
+        shouldUpdateName,
+        pushNameType: typeof cleanPushName,
+        namesMatch: existingContact.display_name === cleanPushName
+      });
+         
+      if (shouldUpdateName) {
+        await chatRepository.updateContact(contactId, cleanPushName, null);
+        logger.info('📝 Updated contact name', { contactId, oldName: existingContact.display_name, newName: cleanPushName });
       } else {
-        logger.debug('Primary_jid unchanged, skipping update', { contactId, actualJid });
+        logger.info('🚫 Skipping contact name update - names are same', { 
+          contactId, 
+          existingName: existingContact.display_name, 
+          pushName: cleanPushName 
+        });
       }
       
-    } else if (actualJid.endsWith('@lid')) {
-      logger.info('Creating/updating contact for @lid', { actualJid, pushName, isGroupMessage });
-      // For @lid, create contact with JID as identifier (no phone number)
-      contactId = await chatRepository.getOrCreateContactByJid(actualJid, pushName);
-      logger.info('Contact creation result for @lid', { contactId, actualJid, pushName });
+      logger.info('✅ Found existing contact', { contactId, jid: actualJid, name: existingContact.display_name });
       
-      // ✅ FIX: Get the contact object for profile pic fetching
-      contact = await chatRepository.getContactById(contactId);
+    } else {
+      // Create new contact using unified method
+      logger.info('🆕 Creating new unified contact', { actualJid, phoneNumber, pushName: cleanPushName });
       
-      // ✅ FIX: Only update primary_jid if changed for @lid too
-      const currentLidContact = await chatRepository.getContactById(contactId);
-      if (!currentLidContact || currentLidContact.primary_jid !== actualJid) {
-        await chatRepository.updatePrimaryJid(contactId, actualJid);
-        logger.info('Updated primary_jid for @lid contact', { contactId, actualJid });
+      if (phoneNumber) {
+        // For @s.whatsapp.net with phone number
+        contactId = await chatRepository.getOrCreateContactByPhone(phoneNumber, cleanPushName);
       } else {
-        logger.debug('Primary_jid unchanged for @lid, skipping update', { contactId, actualJid });
+        // For @lid (no phone number)
+        contactId = await chatRepository.getOrCreateContactByJid(actualJid, cleanPushName);
       }
+      
+      contact = await chatRepository.getContactById(contactId);
+      logger.info('✅ Created new contact', { contactId, jid: actualJid, name: cleanPushName });
+    }
+    
+    // 🔥 CRITICAL: Ensure primary_jid is set correctly for unified identity
+    const currentContact = await chatRepository.getContactById(contactId);
+    if (!currentContact || currentContact.primary_jid !== actualJid) {
+      await chatRepository.updatePrimaryJid(contactId, actualJid);
+      logger.info('🔧 Updated primary_jid for unified identity', { contactId, primary_jid: actualJid });
     }
     
     // ✅ SAFE PROFILE PIC FETCHING: Use queue system for incoming messages only
@@ -665,7 +758,19 @@ export const chatService = {
       originalGroupJid: originalGroupJid || (jidInfo.type === 'broadcast' ? jid : null),
       // ✅ FIX: Add participant and pushName for group AND broadcast messages
       participantJid: (isGroupMessage || jidInfo.type === 'broadcast') ? actualJid : null,
-      pushName: (isGroupMessage || jidInfo.type === 'broadcast') ? pushName : null
+      pushName: (isGroupMessage || jidInfo.type === 'broadcast') ? pushName : null,
+      // 🎥🖼️🎵 Media metadata
+      mediaType: mediaData?.type || null,
+      mediaUrl: mediaData?.url || null,
+      mediaFilename: mediaData?.filename || null,
+      mediaFilesize: mediaData?.filesize || null,
+      mediaMimetype: mediaData?.mimetype || null,
+      mediaDuration: mediaData?.duration || null,
+      mediaWidth: mediaData?.width || null,
+      mediaHeight: mediaData?.height || null,
+      mediaPageCount: mediaData?.pageCount || null,
+      mediaThumbnailUrl: mediaData?.thumbnail || null,
+      mediaCaption: mediaData?.caption || null
     });
 
     // Link contact to conversation if we have one (BUT NOT FOR GROUPS!)
@@ -683,7 +788,15 @@ export const chatService = {
       }
     }
 
-    logger.info('Message stored with contact', { waMessageId, conversationId, contactId, pushName });
+    logger.info('Message stored with contact', {
+      waMessageId,
+      conversationId,
+      contactId,
+      pushName: message.pushName,
+      participantJid: message.key.participant,
+      originalJid: jid,
+      actualJid
+    });
 
     // Emit to Socket.IO for real-time updates using conversation_id
     if (global.io && conversationId) {
@@ -702,7 +815,19 @@ export const chatService = {
         original_group_jid: originalGroupJid,
         // ✅ FIX: Add participant and pushName for group AND broadcast messages
         push_name: (isGroupMessage || jidInfo.type === 'broadcast') ? pushName : null,
-        sender_jid: (isGroupMessage || jidInfo.type === 'broadcast') ? actualJid : null
+        sender_jid: (isGroupMessage || jidInfo.type === 'broadcast') ? actualJid : null,
+        // 🎥🖼️🎵 Media fields
+        media_type: mediaData?.type || null,
+        media_url: mediaData?.url || null,
+        media_filename: mediaData?.filename || null,
+        media_filesize: mediaData?.filesize || null,
+        media_mimetype: mediaData?.mimetype || null,
+        media_duration: mediaData?.duration || null,
+        media_width: mediaData?.width || null,
+        media_height: mediaData?.height || null,
+        media_page_count: mediaData?.pageCount || null,
+        media_thumbnail_url: mediaData?.thumbnail || null,
+        media_caption: mediaData?.caption || null
       };
       
       logger.info('Emitting new-message to Socket.IO', { 
@@ -732,6 +857,28 @@ export const chatService = {
         });
         
         global.io.emit('contact_update', contactUpdateData);
+      }
+      
+      // 🔥 CRITICAL: Emit conversation update for group messages to refresh contact list
+      if (isGroupMessage && conversationId) {
+        const conversationUpdateData = {
+          conversation_id: conversationId,
+          jid: jid,
+          last_message_preview: text,
+          last_message_at: new Date().toISOString(),
+          unread_count: 1,
+          type: 'group',
+          group_name: originalGroupJid ? (await chatRepository.getConversationById(conversationId))?.group_name : null
+        };
+        
+        logger.info('Emitting conversation_update for group message', { 
+          conversationId, 
+          jid,
+          messagePreview: text,
+          type: 'group'
+        });
+        
+        global.io.emit('conversation_update', conversationUpdateData);
       }
     } else {
       logger.warn('Socket.IO not available or no conversationId', { 

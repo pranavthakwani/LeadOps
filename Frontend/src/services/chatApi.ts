@@ -77,9 +77,14 @@ export interface Contact {
 
 export const chatApi = {
   // Get messages by conversation ID (preferred method)
-  async getMessagesByConversation(conversationId: number): Promise<ChatMessage[]> {
+  async getMessagesByConversation(conversationId: number, limit?: number, offset?: number): Promise<ChatMessage[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/conversations/${conversationId}/messages`);
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit.toString());
+      if (offset) params.append('offset', offset.toString());
+      
+      const url = `${API_BASE_URL}/conversations/${conversationId}/messages${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await axios.get(url);
       return response.data.data?.messages || [];
     } catch (error) {
       console.error('Error fetching conversation messages:', error);
@@ -109,9 +114,30 @@ export const chatApi = {
     }
   },
 
-  // Get conversation by JID (for lead-to-conversation lookup)
+  // 🔥 CRITICAL: Resolve JID to merged contact conversation
+  async resolveJidToConversation(jid: string): Promise<{ success: boolean; conversationId?: number; error?: string }> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/resolve-jid/${encodeURIComponent(jid)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error resolving JID to conversation:', error);
+      return { success: false, error: 'Failed to resolve JID' };
+    }
+  },
+
+  // Get conversation by JID (for lead-to-conversation lookup) - 🔥 UPDATED for merged contacts
   async getConversationByJid(jid: string): Promise<Contact | null> {
     try {
+      // 🔥 CRITICAL: First resolve JID to correct conversation for merged contacts
+      const resolved = await this.resolveJidToConversation(jid);
+      
+      if (resolved.success && resolved.conversationId) {
+        // Get the conversation using the resolved ID
+        const conversations = await this.getConversations();
+        return conversations.find(conv => conv.conversation_id === resolved.conversationId) || null;
+      }
+      
+      // Fallback to old method if resolve fails
       const conversations = await this.getConversations();
       return conversations.find(conv => conv.primary_jid === jid) || null;
     } catch (error) {
@@ -411,9 +437,14 @@ export const chatApi = {
   },
 
   // Get merged messages by contact ID (from all linked conversations)
-  async getMergedMessagesByContact(contactId: number): Promise<ChatMessage[]> {
+  async getMergedMessagesByContact(contactId: number, limit?: number, offset?: number): Promise<ChatMessage[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/contacts/${contactId}/messages`);
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit.toString());
+      if (offset) params.append('offset', offset.toString());
+      
+      const url = `${API_BASE_URL}/contacts/${contactId}/messages${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await axios.get(url);
       return response.data.data || [];
     } catch (error) {
       console.error('Error fetching merged messages:', error);
@@ -452,10 +483,10 @@ export const chatApi = {
       const response = await axios.post(`${API_BASE_URL}/contacts/${sourceContactId}/merge`, {
         targetContactId
       });
-      return response.data.success || false;
+      return response.data; // 🔥 Return full response to access targetConversationId
     } catch (error) {
       console.error('Error merging contacts:', error);
-      return false;
+      return { success: false };
     }
   },
 
@@ -481,10 +512,10 @@ export const chatApi = {
         jid,
         contactId
       });
-      return response.data.success || false;
+      return response.data; // 🔥 Return full response to access targetConversationId
     } catch (error) {
       console.error('Error merging JID with contact:', error);
-      return false;
+      return { success: false };
     }
   },
 
@@ -495,10 +526,10 @@ export const chatApi = {
         fromContactId,
         toContactId
       });
-      return response.data;
+      return response.data; // Return full response to access targetConversationId
     } catch (error) {
       console.error('Error merging all conversations:', error);
-      throw error;
+      throw error; // Changed to throw error instead of returning { success: false }
     }
   },
 
@@ -529,11 +560,9 @@ export const chatApi = {
   },
 
   // Unmerge conversation from contact
-  async unmergeConversation(conversationId: number, newContactName: string) {
+  async unmergeConversation(conversationId: number) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/conversations/${conversationId}/unmerge`, {
-        newContactName
-      });
+      const response = await axios.post(`${API_BASE_URL}/conversations/${conversationId}/unmerge`);
       return response.data;
     } catch (error) {
       console.error('Error unmerging conversation:', error);

@@ -331,7 +331,23 @@ export const supabaseChatRepository = {
         }
       }
 
-      // Insert message with group support
+      // Insert message with group support and media metadata
+      console.log('🔍 DEBUG: Inserting message with data:', {
+        waMessageId: data.waMessageId,
+        fromMe: data.fromMe,
+        text: data.text,
+        timestamp: data.timestamp,
+        mediaType: data.mediaType,
+        mediaUrl: data.mediaUrl,
+        mediaFilesize: data.mediaFilesize,
+        mediaDuration: data.mediaDuration,
+        mediaWidth: data.mediaWidth,
+        mediaHeight: data.mediaHeight,
+        mediaPageCount: data.mediaPageCount,
+        mediaThumbnailUrl: data.mediaThumbnailUrl,
+        mediaCaption: data.mediaCaption
+      });
+
       const { data: messageData, error: insertError } = await supabase
         .from('chat_messages')
         .insert({
@@ -350,7 +366,19 @@ export const supabaseChatRepository = {
           is_group_message: isGroupMessage ? 1 : 0,
           original_group_jid: isGroupMessage ? conversationJid : null,
           sender_jid: isGroupMessage ? participantJid : null,
-          push_name: data.pushName || null
+          push_name: data.pushName || null,
+          // 🎥🖼️🎵 Media metadata fields
+          media_type: data.mediaType || null,
+          media_url: data.mediaUrl || null,
+          media_filename: data.mediaFilename || null,
+          media_filesize: data.mediaFilesize ? (typeof data.mediaFilesize === 'object' ? data.mediaFilesize.low : data.mediaFilesize) : null,
+          media_mimetype: data.mediaMimetype || null,
+          media_duration: data.mediaDuration || null,
+          media_width: data.mediaWidth || null,
+          media_height: data.mediaHeight || null,
+          media_page_count: data.mediaPageCount || null,
+          media_thumbnail_url: data.mediaThumbnailUrl || null,
+          media_caption: data.mediaCaption || null
         })
         .select('id')
         .single();
@@ -459,13 +487,13 @@ export const supabaseChatRepository = {
     return data;
   },
 
-  async getMessagesByConversationId(conversationId) {
+  async getMessagesByConversationId(conversationId, limit = null, offset = null) {
     const supabase = getSupabaseChat();
 
-    console.log('🔍 getMessagesByConversationId called:', { conversationId });
+    console.log('🔍 getMessagesByConversationId called:', { conversationId, limit, offset });
 
-    // Simple query - NO nested joins
-    const { data, error } = await supabase
+    // Simple query - NO nested joins, but include all media fields
+    let query = supabase
       .from('chat_messages')
       .select(`
         id,
@@ -483,11 +511,32 @@ export const supabaseChatRepository = {
         is_group_message,
         original_group_jid,
         sender_jid,
-        push_name
+        push_name,
+        media_type,
+        media_url,
+        media_filename,
+        media_filesize,
+        media_mimetype,
+        media_duration,
+        media_width,
+        media_height,
+        media_page_count,
+        media_thumbnail_url,
+        media_caption
       `)
       .eq('conversation_id', conversationId)
       .order('message_timestamp', { ascending: true })
       .order('id', { ascending: true });
+
+    // Add pagination if provided
+    if (limit) {
+      query = query.limit(limit);
+    }
+    if (offset) {
+      query = query.range(offset, offset + limit - 1);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('❌ getMessagesByConversationId failed:', error);
@@ -558,6 +607,36 @@ export const supabaseChatRepository = {
     }
 
     console.log('Successfully linked conversation', conversationId, 'to contact', contactId);
+  },
+
+  async findContactByPhone(phone, name = null) {
+    const supabase = getSupabaseChat();
+
+    if (!phone || phone.trim() === '') {
+      throw new Error('Phone number is required');
+    }
+
+    const normalizedPhone = this.normalizePhone(phone);
+    console.log('Looking for existing contact by phone:', normalizedPhone);
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('contacts')
+      .select('id, display_name, is_auto_generated')
+      .eq('phone_number', normalizedPhone)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found" error
+      console.error('❌ Error finding contact:', fetchError);
+      return null;
+    }
+
+    if (existing) {
+      console.log('Found existing contact:', existing.id);
+      return existing.id; // Return just the ID
+    }
+
+    console.log('No existing contact found for phone:', normalizedPhone);
+    return null; // Return null if not found (don't create)
   },
 
   async getOrCreateContactByPhone(phone, name = null) {
@@ -841,6 +920,100 @@ export const supabaseChatRepository = {
     logger.info(`Primary JID updated for contact ${contactId}`, { jid });
   },
 
+  // 🔥 CRITICAL: Resolve JID to conversation (handles merged contacts)
+  async resolveJidToConversation(jid) {
+    const supabase = getSupabaseChat();
+
+    try {
+      // First check if JID is mapped to a contact
+      const { data: mappedContact } = await supabase
+        .from('jid_mappings')
+        .select(`
+          contacts!inner(
+            id,
+            display_name,
+            phone_number,
+            primary_jid,
+            is_auto_generated,
+            profile_pic_url
+          )
+        `)
+        .eq('jid', jid)
+        .single();
+
+      if (mappedContact) {
+        const contact = mappedContact.contacts;
+        
+        // Get all conversations for this contact
+        const { data: conversations } = await supabase
+          .from('conversations')
+          .select('id, jid, type, last_message_at')
+          .eq('contact_id', contact.id)
+          .order('last_message_at', { ascending: false })
+          .limit(1);
+
+        if (conversations && conversations.length > 0) {
+          // Return the most recent conversation for this contact
+          const latestConversation = conversations[0];
+          logger.info('🔍 Resolved JID to contact conversation', { 
+            jid, 
+            contactId: contact.id, 
+            conversationId: latestConversation.id,
+            conversationJid: latestConversation.jid,
+            type: latestConversation.type 
+          });
+          return {
+            conversationId: latestConversation.id,
+            contactId: contact.id,
+            contact: contact,
+            conversation: latestConversation
+          };
+        }
+      }
+
+      // If no mapping found, check direct contact lookup
+      const { data: directContact } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('primary_jid', jid)
+        .single();
+
+      if (directContact) {
+        // Get conversations for this contact
+        const { data: conversations } = await supabase
+          .from('conversations')
+          .select('id, jid, type, last_message_at')
+          .eq('contact_id', directContact.id)
+          .order('last_message_at', { ascending: false })
+          .limit(1);
+
+        if (conversations && conversations.length > 0) {
+          const latestConversation = conversations[0];
+          logger.info('🔍 Resolved JID to direct contact conversation', { 
+            jid, 
+            contactId: directContact.id, 
+            conversationId: latestConversation.id,
+            conversationJid: latestConversation.jid,
+            type: latestConversation.type 
+          });
+          return {
+            conversationId: latestConversation.id,
+            contactId: directContact.id,
+            contact: directContact,
+            conversation: latestConversation
+          };
+        }
+      }
+
+      logger.info('🔍 No conversation found for JID', { jid });
+      return null;
+
+    } catch (error) {
+      logger.error('resolveJidToConversation failed', { error: error.message, jid });
+      throw error;
+    }
+  },
+
   async getConversationsWithContacts() {
     const supabase = getSupabaseChat();
 
@@ -1110,8 +1283,35 @@ export const supabaseChatRepository = {
         }
       });
 
-      console.log('✅ API returning:', result.length, 'conversations (including groups)');
-      return result;
+      // 🔥 CRITICAL: Remove duplicates by primary_jid for direct conversations
+      // This ensures same person (same JID) appears only once
+      const deduplicated = [];
+      const seenPrimaryJids = new Set();
+      
+      for (const item of result) {
+        if (item.type === 'group') {
+          // Groups are always included (unique by conversation_id)
+          deduplicated.push(item);
+        } else {
+          // Direct conversations - deduplicate by primary_jid
+          if (!seenPrimaryJids.has(item.primary_jid)) {
+            seenPrimaryJids.add(item.primary_jid);
+            deduplicated.push(item);
+          } else {
+            console.log('🔄 Removing duplicate contact:', { 
+              primary_jid: item.primary_jid, 
+              display_name: item.display_name,
+              conversation_id: item.conversation_id 
+            });
+          }
+        }
+      }
+      
+      // Sort by last message time (newest first)
+      deduplicated.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime());
+      
+      console.log('✅ API returning:', deduplicated.length, 'deduplicated conversations (including groups)');
+      return deduplicated;
 
     } catch (error) {
       console.error('❌ getContactsWithConversationsPaginated failed:', error);
@@ -1619,10 +1819,10 @@ export const supabaseChatRepository = {
     };
   },
 
-  async getMergedMessagesByContactId(contactId) {
+  async getMergedMessagesByContactId(contactId, limit = null, offset = null) {
     const supabase = getSupabaseChat();
 
-    console.log('🔍 Simplified getMergedMessagesByContactId called:', { contactId });
+    console.log('🔍 Simplified getMergedMessagesByContactId called:', { contactId, limit, offset });
 
     try {
       // Simple approach: Get conversations for this contact, then get messages
@@ -1651,7 +1851,7 @@ export const supabaseChatRepository = {
       const conversationIds = conversations.map(c => c.id);
 
       // Get all messages for these conversations
-      const { data: messages, error: msgError } = await supabase
+      let query = supabase
         .from('chat_messages')
         .select(`
           id,
@@ -1669,11 +1869,32 @@ export const supabaseChatRepository = {
           is_group_message,
           original_group_jid,
           sender_jid,
-          push_name
+          push_name,
+          media_type,
+          media_url,
+          media_filename,
+          media_filesize,
+          media_mimetype,
+          media_duration,
+          media_width,
+          media_height,
+          media_page_count,
+          media_thumbnail_url,
+          media_caption
         `)
         .in('conversation_id', conversationIds)
         .order('message_timestamp', { ascending: true })
         .order('id', { ascending: true });
+
+      // Add pagination if provided
+      if (limit) {
+        query = query.limit(limit);
+      }
+      if (offset) {
+        query = query.range(offset, offset + limit - 1);
+      }
+
+      const { data: messages, error: msgError } = await query;
 
       if (msgError) {
         console.error('❌ getMergedMessagesByContactId - messages failed:', msgError);

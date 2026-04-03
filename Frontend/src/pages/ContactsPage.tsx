@@ -164,6 +164,32 @@ export const ContactsPage: React.FC = () => {
       });
     });
 
+    // 🔥 CRITICAL: Listen for conversation updates (for group messages)
+    socket.on('conversation_update', (data: any) => {
+      console.log('Conversation update received:', data);
+      
+      setContacts(prev => {
+        // Find and update the conversation in the list
+        const updatedContacts = prev.map(contact => {
+          if (contact.conversation_id === data.conversation_id) {
+            return {
+              ...contact,
+              last_message_preview: data.last_message_preview,
+              last_message_at: data.last_message_at,
+              unread_count: (contact.total_unread_count || 0) + 1,
+              total_unread_count: (contact.total_unread_count || 0) + 1
+            };
+          }
+          return contact;
+        });
+        
+        // Sort by last message time (newest first)
+        return updatedContacts.sort((a, b) => 
+          new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()
+        );
+      });
+    });
+
     socket.on('disconnect', () => {
       console.log('Socket disconnected');
     });
@@ -213,9 +239,14 @@ export const ContactsPage: React.FC = () => {
   );
 
   const handleContactClick = async (contact: MergedContact) => {
-    // Check if this is an unknown contact (auto-generated with no display name)
-    if (contact.is_auto_generated && (!contact.display_name || contact.display_name === 'Unknown')) {
-      // Show UnifiedContactModal for unknown contacts
+    // Check if this is an unknown contact (auto-generated with no proper display name)
+    // 🔥 FIX: Don't treat contacts with push names as "unknown"
+    const hasValidName = contact.display_name && 
+                        contact.display_name !== 'Unknown' && 
+                        !contact.display_name.startsWith('~');
+    
+    if (contact.is_auto_generated && !hasValidName) {
+      // Show UnifiedContactModal for unknown contacts only
       setUnifiedModalMode('save');
       setUnifiedModalJid(contact.primary_jid);
       setUnifiedModalExistingContact(null);

@@ -6,6 +6,33 @@ import { getSupabaseChat } from '../config/supabase-chat.js';
 
 const router = express.Router();
 
+// 🔥 CRITICAL: Resolve JID to merged contact conversation
+router.get('/resolve-jid/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+
+    if (!jid) {
+      return res.status(400).json({ error: 'JID is required' });
+    }
+
+    // Use the new resolveJidToConversation method
+    const conversationId = await chatRepository.resolveJidToConversation(jid);
+    
+    if (!conversationId) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ 
+      success: true, 
+      conversationId,
+      jid
+    });
+  } catch (err) {
+    console.error('RESOLVE JID ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Send message to conversation
 router.post('/conversations/:id/send-message', async (req, res) => {
   try {
@@ -162,16 +189,18 @@ router.post('/conversations/:id/send-message', async (req, res) => {
 router.get('/conversations/:id/messages', async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+    const offset = req.query.offset ? parseInt(req.query.offset) : null;
     
-    console.log('🔍 /conversations/:id/messages called:', { conversationId, params: req.params });
+    console.log('🔍 /conversations/:id/messages called:', { conversationId, limit, offset, params: req.params });
     
     if (!conversationId || isNaN(conversationId)) {
       console.error('❌ Invalid conversationId:', conversationId);
       return res.status(400).json({ error: 'Invalid conversation ID' });
     }
     
-    // Get messages
-    const messages = await chatRepository.getMessagesByConversationId(conversationId);
+    // Get messages with pagination
+    const messages = await chatRepository.getMessagesByConversationId(conversationId, limit, offset);
     
     // Get conversation info
     const conversation = await chatRepository.getConversationById(conversationId);
@@ -185,6 +214,8 @@ router.get('/conversations/:id/messages', async (req, res) => {
     console.log('✅ Messages retrieved:', { 
       conversationId, 
       messageCount: messages.length,
+      limit,
+      offset,
       hasConversation: !!conversation,
       hasContact: !!contact,
       conversation: conversation,
@@ -196,7 +227,12 @@ router.get('/conversations/:id/messages', async (req, res) => {
       data: {
         messages: messages,
         conversation: conversation,
-        contact: contact
+        contact: contact,
+        pagination: {
+          limit,
+          offset,
+          hasMore: limit && messages.length === limit
+        }
       }
     });
   } catch (err) {
@@ -463,11 +499,19 @@ router.put('/contacts/:id', async (req, res) => {
 router.get('/contacts/:id/messages', async (req, res) => {
   try {
     const contactId = parseInt(req.params.id);
-    const messages = await chatRepository.getMergedMessagesByContactId(contactId);
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+    const offset = req.query.offset ? parseInt(req.query.offset) : null;
+    
+    const messages = await chatRepository.getMergedMessagesByContactId(contactId, limit, offset);
 
     res.json({
       success: true,
-      data: messages
+      data: messages,
+      pagination: {
+        limit,
+        offset,
+        hasMore: limit && messages.length === limit
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -514,6 +558,23 @@ router.post('/contacts/:id/merge', async (req, res) => {
     // Get all conversations from source contact
     const sourceConversations = await chatRepository.getConversationIdsByContactId(sourceContactId);
     
+    // 🔥 CRITICAL: Get target contact's primary conversation for frontend redirect
+    let targetConversationId = null;
+    
+    if (targetContact?.primary_jid) {
+      // Get the conversation for the target's primary JID
+      const targetConversation = await chatRepository.getConversationByJid(targetContact.primary_jid);
+      targetConversationId = targetConversation?.id;
+    }
+    
+    // If no primary conversation, get any conversation from target contact
+    if (!targetConversationId) {
+      const targetConversations = await chatRepository.getConversationIdsByContactId(targetContactId);
+      if (targetConversations.length > 0) {
+        targetConversationId = targetConversations[0].id;
+      }
+    }
+    
     // Transfer JID mappings from source to target contact
     await chatRepository.transferJidMappings(sourceContactId, targetContactId);
     
@@ -522,10 +583,30 @@ router.post('/contacts/:id/merge', async (req, res) => {
       await chatRepository.linkContact(conv.id, targetContactId);
     }
 
+    // 🔥 CRITICAL: Mark source contact as merged (hide from contact list)
+    await chatRepository.markContactAsMerged(sourceContactId);
+    
+    // 🔥 CRITICAL: Update target contact with all merged conversation IDs
+    const allTargetConversations = await chatRepository.getConversationIdsByContactId(targetContactId);
+    const allConversationIds = allTargetConversations.map(conv => conv.id).concat(sourceConversations.map(conv => conv.id));
+    
+    await chatRepository.updateContact(targetContactId, targetContact.display_name, targetContact.phone_number);
+    
+    // Update target contact's all_conversation_ids field
+    const supabase = getSupabaseChat();
+    await supabase
+      .from('contacts')
+      .update({ 
+        all_conversation_ids: allConversationIds.join(',')
+      })
+      .eq('id', targetContactId);
+
     res.json({ 
       success: true, 
       message: 'Contacts merged successfully',
-      mergedConversations: sourceConversations.length
+      mergedConversations: sourceConversations.length,
+      targetConversationId, // 🔥 Return target conversation for frontend redirect
+      targetContactId
     });
   } catch (err) {
     console.error('MERGE CONTACTS ERROR:', err);
@@ -629,6 +710,7 @@ router.post('/contacts/merge-jid', async (req, res) => {
     res.json({ 
       success: true, 
       conversationId: mapResult.conversationId || conversationId,
+      targetConversationId: mapResult.conversationId || conversationId, // 🔥 Return target conversation for frontend redirect
       message: 'JID merged with contact successfully' 
     });
   } catch (err) {
@@ -686,6 +768,24 @@ router.post('/contacts/merge-all-conversations', async (req, res) => {
       }
     }
 
+    // 🔥 CRITICAL: Get target contact's primary conversation for frontend redirect
+    let targetConversationId = null;
+    const targetContact = await chatRepository.getContactById(toContactId);
+    
+    if (targetContact?.primary_jid) {
+      // Get the conversation for the target's primary JID
+      const targetConversation = await chatRepository.getConversationByJid(targetContact.primary_jid);
+      targetConversationId = targetConversation?.id;
+    }
+    
+    // If no primary conversation, get any conversation from target contact
+    if (!targetConversationId) {
+      const targetConversations = await chatRepository.getConversationsByContact(toContactId);
+      if (targetConversations && targetConversations.length > 0) {
+        targetConversationId = targetConversations[0].conversation_id;
+      }
+    }
+
     // Clean up the old contact (optional - you might want to keep it for history)
     // await chatRepository.deleteContact(fromContactId);
 
@@ -694,6 +794,7 @@ router.post('/contacts/merge-all-conversations', async (req, res) => {
       mergedConversations: mergeResults,
       totalConversations: conversations.length,
       successfulMerges: mergeResults.filter(r => r.success).length,
+      targetConversationId, // 🔥 Return target conversation for frontend redirect
       message: `Successfully merged ${mergeResults.filter(r => r.success).length}/${conversations.length} conversations` 
     });
   } catch (err) {
@@ -738,6 +839,7 @@ router.post('/contacts/merge-lid-with-new', async (req, res) => {
       contactId,
       whatsappConversationId,
       lidConversationId: mapResult.conversationId || lidConversationId,
+      targetConversationId: lidConversationId, // 🔥 Return target conversation for frontend redirect
       whatsappJid,
       message: 'Contact created and merged successfully' 
     });
@@ -771,11 +873,6 @@ router.get('/contacts/search', async (req, res) => {
 router.post('/conversations/:id/unmerge', async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
-    const { newContactName } = req.body;
-
-    if (!newContactName) {
-      return res.status(400).json({ error: 'New contact name is required' });
-    }
 
     // Get the conversation to unmerge
     const conversation = await chatRepository.getConversationById(conversationId);
@@ -794,21 +891,40 @@ router.post('/conversations/:id/unmerge', async (req, res) => {
       return res.status(400).json({ error: 'Cannot extract phone number from JID' });
     }
 
-    // Create new contact
-    const newContactId = await chatRepository.createContact(newContactName, phoneNumber);
+    // Find existing contact by phone number (original contact before merge)
+    const contactId = await chatRepository.findContactByPhone(phoneNumber);
     
-    // Update the conversation to link to the new contact
-    await chatRepository.linkContact(conversationId, newContactId);
-    
-    // Update primary JID for the new contact
-    await chatRepository.updatePrimaryJid(newContactId, conversation.jid);
-
-    res.json({ 
-      success: true, 
-      message: 'Conversation unmerged successfully',
-      newContactId,
+    console.log('🔍 Unmerge debug:', {
+      phoneNumber,
+      contactId,
+      contactIdType: typeof contactId,
       conversationId
     });
+    
+    if (contactId) {
+      // Link conversation back to original contact
+      await chatRepository.linkContact(conversationId, contactId);
+      
+      // Update primary JID for the original contact
+      await chatRepository.updatePrimaryJid(contactId, conversation.jid);
+      
+      console.log('✅ Unmerged: Linked conversation back to existing contact:', {
+        conversationId,
+        contactId: contactId,
+        phoneNumber
+      });
+      
+      res.json({ 
+        success: true, 
+        message: 'Conversation unmerged successfully',
+        contactId: contactId,
+        conversationId
+      });
+    } else {
+      // No existing contact found - this shouldn't happen for valid unmerge
+      console.error('❌ No existing contact found for unmerge:', { phoneNumber, conversationId });
+      res.status(404).json({ error: 'No existing contact found for unmerge' });
+    }
   } catch (err) {
     console.error('UNMERGE CONVERSATION ERROR:', err);
     res.status(500).json({ error: err.message });
@@ -1063,6 +1179,116 @@ router.get('/dashboard', async (req, res) => {
   } catch (error) {
     console.error('Dashboard endpoint error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+// Download media by WhatsApp message ID
+router.get('/media/:waMessageId', async (req, res) => {
+  try {
+    const { waMessageId } = req.params;
+    
+    if (!waMessageId) {
+      return res.status(400).json({ success: false, error: 'WhatsApp message ID required' });
+    }
+
+    console.log('🔍 Media download request for waMessageId:', waMessageId);
+
+    // Get message from database with raw_message
+    const { supabaseChatRepository } = await import('../repositories/supabase-chatRepository.js');
+    
+    const message = await supabaseChatRepository.getMessageById(waMessageId);
+    
+    if (!message || !message.raw_message) {
+      return res.status(404).json({ success: false, error: 'Message not found or no media' });
+    }
+
+    // Parse raw WhatsApp message
+    const rawMessage = JSON.parse(message.raw_message);
+    
+    // Use Baileys to download the media
+    const { downloadMediaMessageFromRaw } = await import('../services/baileys.js');
+    const buffer = await downloadMediaMessageFromRaw(rawMessage);
+    
+    if (!buffer) {
+      return res.status(404).json({ success: false, error: 'Media not found' });
+    }
+
+    // Extract file info from raw message
+    let filename = 'media';
+    let contentType = 'application/octet-stream';
+    
+    const msg = rawMessage.message;
+    
+    if (msg.imageMessage) {
+      contentType = msg.imageMessage.mimetype || 'image/jpeg';
+      filename = msg.imageMessage.fileName || `image_${waMessageId}.jpg`;
+    } else if (msg.videoMessage) {
+      contentType = msg.videoMessage.mimetype || 'video/mp4';
+      filename = msg.videoMessage.fileName || `video_${waMessageId}.mp4`;
+    } else if (msg.audioMessage) {
+      contentType = msg.audioMessage.mimetype || 'audio/mpeg';
+      filename = msg.audioMessage.fileName || `audio_${waMessageId}.mp3`;
+    } else if (msg.documentMessage) {
+      contentType = msg.documentMessage.mimetype || 'application/pdf';
+      filename = msg.documentMessage.fileName || `document_${waMessageId}.pdf`;
+    } else if (msg.stickerMessage) {
+      contentType = msg.stickerMessage.mimetype || 'image/webp';
+      filename = `sticker_${waMessageId}.webp`;
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Media download failed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get thumbnail for media message
+router.get('/media/:waMessageId/thumbnail', async (req, res) => {
+  try {
+    const { waMessageId } = req.params;
+    
+    if (!waMessageId) {
+      return res.status(400).json({ success: false, error: 'WhatsApp message ID required' });
+    }
+
+    // Get message from database with raw_message
+    const { supabaseChatRepository } = await import('../repositories/supabase-chatRepository.js');
+    
+    const message = await supabaseChatRepository.getMessageById(waMessageId);
+    
+    if (!message || !message.raw_message) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    // Parse raw WhatsApp message
+    const rawMessage = JSON.parse(message.raw_message);
+    const msg = rawMessage.message;
+    
+    let thumbnailBuffer = null;
+    
+    // Extract thumbnail from different message types
+    if (msg.imageMessage?.jpegThumbnail) {
+      thumbnailBuffer = Buffer.from(msg.imageMessage.jpegThumbnail, 'base64');
+    } else if (msg.videoMessage?.jpegThumbnail) {
+      thumbnailBuffer = Buffer.from(msg.videoMessage.jpegThumbnail, 'base64');
+    } else if (msg.documentMessage?.jpegThumbnail) {
+      thumbnailBuffer = Buffer.from(msg.documentMessage.jpegThumbnail, 'base64');
+    }
+
+    if (!thumbnailBuffer) {
+      return res.status(404).json({ success: false, error: 'Thumbnail not found' });
+    }
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.send(thumbnailBuffer);
+
+  } catch (error) {
+    console.error('Thumbnail fetch failed:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

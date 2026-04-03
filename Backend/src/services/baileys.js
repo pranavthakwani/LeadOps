@@ -5,7 +5,8 @@ import {
   fetchLatestBaileysVersion,
   BufferJSON,
   proto,
-  delay
+  delay,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import fs from 'fs';
@@ -955,6 +956,79 @@ class BaileysService {
     logger.info('✅ Baileys service shut down successfully');
   }
 
+  // Download media from WhatsApp
+  async downloadMedia(mediaUrl) {
+    try {
+      if (!this.sock) {
+        logger.error('[WhatsApp] No socket connection available for media download');
+        return null;
+      }
+
+      logger.info('[WhatsApp] Downloading media:', { mediaUrl });
+      
+      // Use Baileys to download the media
+      const buffer = await this.sock.downloadMediaMessage(mediaUrl);
+      
+      if (buffer) {
+        logger.info('[WhatsApp] Media downloaded successfully', { 
+          size: buffer.length,
+          url: mediaUrl 
+        });
+        return buffer;
+      } else {
+        logger.error('[WhatsApp] Failed to download media - no buffer returned');
+        return null;
+      }
+    } catch (error) {
+      logger.error('[WhatsApp] Media download failed:', {
+        error: error.message,
+        mediaUrl
+      });
+      return null;
+    }
+  }
+
+  // Download media from raw WhatsApp message
+  async downloadMediaFromMessage(rawMessage) {
+    try {
+      if (!this.sock) {
+        logger.error('[WhatsApp] No socket connection available for media download');
+        return null;
+      }
+
+      logger.info('[WhatsApp] Downloading media from raw message');
+      
+      // Parse raw message if it's a string
+      const msg = typeof rawMessage === 'string' ? JSON.parse(rawMessage) : rawMessage;
+      
+      // Use Baileys downloadMediaMessage function (standalone, not on socket)
+      const stream = await downloadMediaMessage(
+        msg,
+        'buffer',
+        {},
+        {
+          logger: console,
+          reuploadRequest: this.sock.updateMediaMessage
+        }
+      );
+      
+      if (stream) {
+        logger.info('[WhatsApp] Media downloaded from raw message successfully', { 
+          size: stream.length 
+        });
+        return stream;
+      } else {
+        logger.error('[WhatsApp] Failed to download media from raw message - no buffer returned');
+        return null;
+      }
+    } catch (error) {
+      logger.error('[WhatsApp] Media download from raw message failed:', {
+        error: error.message
+      });
+      return null;
+    }
+  }
+
   getClient() {
     const env = getEnv();
     if (env.whatsapp.disabled) {
@@ -967,3 +1041,13 @@ class BaileysService {
 
 // Create singleton instance
 export const baileysService = new BaileysService();
+
+// Export downloadMedia function for route usage
+export const downloadMedia = async (mediaUrl) => {
+  return await baileysService.downloadMedia(mediaUrl);
+};
+
+// Export downloadMediaMessage wrapper for route usage
+export const downloadMediaMessageFromRaw = async (rawMessage) => {
+  return await baileysService.downloadMediaFromMessage(rawMessage);
+};

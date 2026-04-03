@@ -125,7 +125,7 @@ interface UnifiedContactModalProps {
   jid?: string;
   contactId?: number;
   existingContact?: any;
-  onSuccess?: () => void;
+  onSuccess?: (conversationId?: number) => void;
 }
 
 export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
@@ -362,7 +362,12 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
         }
 
         // Use the new API to create contact and merge with @lid JID
-        await chatApi.mergeLidWithNewContact(name.trim(), fullPhone, jid);
+        const result = await chatApi.mergeLidWithNewContact(name.trim(), fullPhone, jid);
+        
+        // 🔥 CRITICAL: Navigate to target conversation after merge
+        if (result.success && result.targetConversationId) {
+          onSuccess?.(result.targetConversationId);
+        }
       } else if (selectedContact) {
         // Check if we're merging a merged conversation (has multiple JIDs)
         // If existingContact has allConversationIds array, it's a merged conversation
@@ -371,10 +376,21 @@ export const UnifiedContactModal: React.FC<UnifiedContactModalProps> = ({
           console.log('Merging ALL conversations from merged contact to:', selectedContact.id);
           const result = await chatApi.mergeAllConversations(existingContact.contact_id, selectedContact.id);
           console.log('Merge all result:', result);
+          
+          // 🔥 CRITICAL: Navigate to target conversation after merge
+          if (result.success && result.targetConversationId) {
+            onSuccess?.(result.targetConversationId);
+          }
         } else {
           // Single JID merge - use existing logic
-          await chatApi.mergeJidWithContact(jid, selectedContact.id);
+          const result = await chatApi.mergeJidWithContact(jid, selectedContact.id);
+          
+          // 🔥 CRITICAL: Navigate to target conversation after merge
+          if (result.success && result.targetConversationId) {
+            onSuccess?.(result.targetConversationId);
+          }
         }
+
       } else {
         setError('Select contact or create new');
         setLoading(false);
