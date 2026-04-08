@@ -296,7 +296,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
             <span className="text-[#128c7e] font-semibold">
               Lowest: {(() => {
                 const prices = offerings.map(o => o.parsedData?.price).filter((p): p is number => p != null && p > 0);
-                return prices.length > 0 ? `¥${Math.min(...prices).toLocaleString('en-IN')}` : 'Price not available';
+                return prices.length > 0 ? `Rs. ${Math.min(...prices).toLocaleString('en-IN')}` : 'Price not available';
               })()}
             </span>
           </div>

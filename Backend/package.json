@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --import ./preload.js src/server.js",
-    "dev": "node --import ./preload.js src/server.js",
+    "start": "node api.js && node --import ./preload.js src/server.js",
+    "dev": "node api.js && node --import ./preload.js src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "import:contacts": "node --import ./preload.js scripts/import-excel-contacts.js",
     "migrate:profile-pic": "node --import ./preload.js scripts/run-migration.js",
