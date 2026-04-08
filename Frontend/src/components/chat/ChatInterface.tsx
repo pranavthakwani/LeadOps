@@ -2,10 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { X, Reply, Send, ChevronDown, MoreVertical, Trash2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { chatApi } from '../../services/chatApi';
+import { chatApi, Contact } from '../../services/chatApi';
 import { SOCKET_BASE_URL } from '../../config/network';
 import { Message } from '../../types/message';
-import { Contact as ApiContact } from '../../services/chatApi';
 import { UnifiedContactModal } from '../common/UnifiedContactModal';
 import { ProfilePicPreviewModal } from '../common/ProfilePicPreviewModal';
 import MediaMessage from './MediaMessage';
@@ -182,9 +181,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [unmergeLoading, setUnmergeLoading] = useState(false);
   const [mergedConversationCount, setMergedConversationCount] = useState(0);
   const [contacts, setContacts] = useState<any[]>([]);
-  const [hasMoreMessages, setHasMoreMessages] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -410,11 +406,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       // Load messages with correct priority: group first, then contact, then conversation
       let dbMessages: any[] = [];
-      const limit = 30; // Load only latest 30 messages initially
+      // Load ALL messages instead of pagination
       
-      // Reset pagination state
-      setCurrentPage(0);
-      setHasMoreMessages(true);
+      // Removed pagination state - all messages loaded at once
       
       // Debug logging
       console.log("🔍 Loading messages with:", {
@@ -423,8 +417,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         type: convData?.type,
         propContactId,
         convData,
-        jid: convData?.jid,
-        limit
+        jid: convData?.jid
       });
       
       // 🔥 CRITICAL: If we don't have conversation type but have conversationId, fetch conversation data
@@ -464,37 +457,37 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             contactId: convData?.contact_id
           });
         }
-        dbMessages = await chatApi.getMessagesByConversation(convId, limit);
+        dbMessages = await chatApi.getMessagesByConversation(convId);
         console.log("✅ Group messages loaded:", dbMessages.length);
         setMergedConversationCount(1);
-        setHasMoreMessages(dbMessages.length === limit);
+        // No more messages - all loaded at once
       } else if (propContactId) {
         // PRIORITY 2: Use merged messages for direct chats when contactId is provided
         console.log("Loading merged messages by contact_id:", propContactId);
-        dbMessages = await chatApi.getMergedMessagesByContact(propContactId, limit);
+        dbMessages = await chatApi.getMergedMessagesByContact(propContactId);
         const conversations = await chatApi.getConversationsByContact(propContactId);
         setMergedConversationCount(conversations.length);
-        setHasMoreMessages(dbMessages.length === limit);
+        // No more messages - all loaded at once
       } else if (convData?.contact_id && convData?.type !== 'group') {
         // PRIORITY 3: Use merged messages for direct chats with contact_id
         console.log("Loading merged messages by convData.contact_id:", convData?.contact_id);
-        dbMessages = await chatApi.getMergedMessagesByContact(convData?.contact_id, limit);
+        dbMessages = await chatApi.getMergedMessagesByContact(convData?.contact_id);
         const conversations = await chatApi.getConversationsByContact(convData?.contact_id);
         setMergedConversationCount(conversations.length);
-        setHasMoreMessages(dbMessages.length === limit);
+        // No more messages - all loaded at once
       } else if (convId) {
         // PRIORITY 4: Fallback to conversation_id for direct chats
         console.log("🔥 LOADING DIRECT MESSAGES by conversation_id:", convId, "type:", convData?.type);
-        dbMessages = await chatApi.getMessagesByConversation(convId, limit);
+        dbMessages = await chatApi.getMessagesByConversation(convId);
         console.log("✅ Direct messages loaded:", dbMessages.length);
         setMergedConversationCount(1);
-        setHasMoreMessages(dbMessages.length === limit);
+        // No more messages - all loaded at once
       } else {
         console.log("🔥 NO WAY TO LOAD MESSAGES - convId:", convId, "convData:", convData);
         // No way to load messages
         dbMessages = [];
         setMergedConversationCount(0);
-        setHasMoreMessages(false);
+        // No more messages - all loaded at once
       }
       
       // Convert database messages to display format
@@ -618,78 +611,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   };
 
-  // Load more messages for infinite scroll
-  const loadMoreMessages = async () => {
-    if (!hasMoreMessages || isLoadingMore || isLoading) return;
-
-    try {
-      setIsLoadingMore(true);
-      const nextPage = currentPage + 1;
-      const limit = 30;
-      const offset = nextPage * limit;
-
-      console.log('🔍 Loading more messages:', { nextPage, limit, offset });
-
-      let moreMessages: any[] = [];
-
-      // Get current conversation data from state
-      const currentConvData = conversationData;
-
-      // Load messages with same logic as loadMessages but with pagination
-      if (currentConvData?.type === 'group') {
-        moreMessages = await chatApi.getMessagesByConversation(conversationId!, limit, offset);
-      } else if (propContactId) {
-        moreMessages = await chatApi.getMergedMessagesByContact(propContactId, limit, offset);
-      } else if (currentConvData?.contact_id && currentConvData?.type !== 'group') {
-        moreMessages = await chatApi.getMergedMessagesByContact(currentConvData?.contact_id, limit, offset);
-      } else if (conversationId) {
-        moreMessages = await chatApi.getMessagesByConversation(conversationId, limit, offset);
-      }
-
-      // Convert to display format
-      const displayMessages: DisplayMessage[] = moreMessages.map((msg: any) => ({
-        id: msg.id,
-        text: msg.message_text || '',
-        timestamp: new Date(Number(msg.message_timestamp)),
-        isOutgoing: msg.from_me,
-        sender: msg.push_name || (msg.from_me ? 'You' : 'Unknown'),
-        senderNumber: msg.jid,
-        waMessageId: msg.wa_message_id,
-        quotedMessageId: msg.quoted_message_id,
-        quotedText: msg.quoted_text,
-        quotedFromMe: msg.quoted_sender === 'me' || msg.quoted_sender === currentConvData?.jid,
-        mediaType: msg.media_type,
-        mediaUrl: msg.media_url,
-        mediaFilename: msg.media_filename,
-        mediaFilesize: msg.media_filesize,
-        mediaDuration: msg.media_duration,
-        mediaWidth: msg.media_width,
-        mediaHeight: msg.media_height,
-        mediaPageCount: msg.media_page_count,
-        mediaThumbnailUrl: msg.media_thumbnail_url,
-        mediaCaption: msg.media_caption,
-        chatId: msg.conversation_id,
-        status: 'read' as const
-      }));
-
-      // Prepend messages to existing ones (older messages come first)
-      setChatMessages(prev => [...displayMessages, ...prev]);
-      setCurrentPage(nextPage);
-      setHasMoreMessages(moreMessages.length === limit);
-
-      console.log('✅ Loaded more messages:', { 
-        loaded: moreMessages.length, 
-        total: chatMessages.length + moreMessages.length,
-        hasMore: moreMessages.length === limit
-      });
-
-    } catch (error) {
-      console.error('Error loading more messages:', error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  };
-
   // Load messages on component mount and when dependencies change
   useEffect(() => {
     loadMessages();
@@ -713,14 +634,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         socket.emit('join-conversation', conversationId);
       }
 
-      // For merged contacts, join all conversation rooms
-      if (propContactId && allConversationIds && allConversationIds.length > 0) {
-        console.log('Joining merged conversation rooms:', allConversationIds);
-        allConversationIds.forEach(convId => {
-          console.log('Joining room:', convId);
-          socket.emit('join-conversation', convId);
-        });
-      }
+      // For merged contacts, join all conversation rooms - DISABLED
+      // This functionality is removed since we don't use pagination anymore
     });
 
     // Listen for new messages
@@ -804,36 +719,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, [conversationId, propContactId, allConversationIds, onContactUpdate]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive - REMOVED infinite scroll
   useEffect(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      setShowScrollToBottom(false);
     }
   }, [chatMessages]);
-
-  // Scroll detection for showing scroll-to-bottom button and infinite scroll
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 100; // 100px threshold
-      setShowScrollToBottom(!isAtBottom);
-
-      // Infinite scroll: Load more messages when scrolling to top
-      const isAtTop = scrollTop <= 100; // 100px threshold from top
-      if (isAtTop && hasMoreMessages && !isLoadingMore && !isLoading) {
-        console.log('🔍 Scrolled to top, loading more messages...');
-        loadMoreMessages();
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    handleScroll(); // Initial check
-
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [chatMessages, hasMoreMessages, isLoadingMore, isLoading]); // Include pagination dependencies
 
   // Scroll to bottom function
   const scrollToBottom = () => {
@@ -1483,12 +1375,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           ) : (
             <>
-              {/* Loading indicator for infinite scroll */}
-              {isLoadingMore && (
+              {/* Loading indicator - REMOVED: No more infinite scroll */}
+              {false && (
                 <div className="flex justify-center py-2">
                   <div className="text-gray-500 dark:text-gray-400 text-sm flex items-center gap-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
-                    Loading older messages...
+                    <span>Loading more messages...</span>
                   </div>
                 </div>
               )}
@@ -1808,7 +1700,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             
             // Refresh conversation data after modal action
             if (conversationId) {
-              const conversations: ApiContact[] = await chatApi.getConversations();
+              const conversations: Contact[] = await chatApi.getConversations();
               const conv = conversations.find(c => c.conversation_id === conversationId);
               
               // If this conversation now has a contact_id, fetch the contact details

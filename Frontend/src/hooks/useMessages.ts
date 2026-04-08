@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { getMessages } from '../services/api';
 import type { Message } from '../types/message';
 
-// Cache for storing paginated data
+// Cache for storing paginated data - CLEARED to fix timestamp issues
 const messageCache = new Map<number, { messages: Message[]; totalCount: number }>();
 
 export const useMessages = (page: number = 1, limit: number = 20) => {
@@ -17,9 +17,9 @@ export const useMessages = (page: number = 1, limit: number = 20) => {
         setLoading(true);
         setError(null);
         
-        // Check cache first
-        if (messageCache.has(page)) {
-          console.log(`📄 Using cached messages for page ${page}`);
+        // Check cache first - DISABLED to force refresh with corrected timestamps
+        if (false && messageCache.has(page)) {
+          console.log(`Using cached messages for page ${page}`);
           const cached = messageCache.get(page)!;
           setMessages(cached.messages);
           setTotalCount(cached.totalCount);

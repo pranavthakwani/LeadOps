@@ -1167,7 +1167,7 @@ router.get('/dashboard', async (req, res) => {
         id: item.id.toString(),
         sender: item.sender || 'Unknown',
         preview: item.raw_message ? item.raw_message.substring(0, 100) + '...' : '',
-        timestamp: item.created_at,
+        timestamp: new Date(new Date(item.created_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
         classification: item.classification || 'unknown'
       }))
     };
@@ -1397,12 +1397,12 @@ router.get('/leads', async (req, res) => {
       wa_message_id: lead.wa_message_id,
       sender: lead.sender || 'Unknown',
       senderNumber: lead.chat_id || '',
-      sender_jid: lead.sender, // Add participant JID for broadcast resolution
+      sender_jid: lead.sender,
       preview: lead.raw_message ? lead.raw_message.substring(0, 100) + '...' : '',
       rawMessage: lead.raw_message || '',
       classification: 'lead',
       detectedBrands: lead.brand ? [lead.brand] : [],
-      timestamp: lead.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(lead.created_at).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: lead.confidence || 0,
       parsedData: lead.brand ? {
         brand: lead.brand,
@@ -1479,7 +1479,7 @@ router.get('/offerings', async (req, res) => {
       rawMessage: offering.raw_message || '',
       classification: 'offering',
       detectedBrands: offering.brand ? [offering.brand] : [],
-      timestamp: offering.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(offering.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: offering.confidence || 0,
       parsedData: offering.brand ? {
         brand: offering.brand,
@@ -1556,7 +1556,7 @@ router.get('/ignored', async (req, res) => {
       rawMessage: ignored.raw_message || '',
       classification: 'ignored',
       detectedBrands: [],
-      timestamp: ignored.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(ignored.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: ignored.confidence || 0,
       parsedData: undefined,
       whatsappDeepLink: ignored.chat_id ? `https://wa.me/${ignored.chat_id.replace('@c.us', '')}` : '',
@@ -1614,7 +1614,7 @@ router.get('/leads/:id', async (req, res) => {
       rawMessage: data.raw_message || '',
       classification: 'lead',
       detectedBrands: data.brand ? [data.brand] : [],
-      timestamp: data.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(data.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: data.confidence || 0,
       parsedData: data.brand ? {
         brand: data.brand,
@@ -1676,7 +1676,7 @@ router.get('/offerings/:id', async (req, res) => {
       rawMessage: data.raw_message || '',
       classification: 'offering',
       detectedBrands: data.brand ? [data.brand] : [],
-      timestamp: data.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(data.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: data.confidence || 0,
       parsedData: data.brand ? {
         brand: data.brand,
@@ -1738,7 +1738,7 @@ router.get('/ignored/:id', async (req, res) => {
       rawMessage: data.raw_message || '',
       classification: 'ignored',
       detectedBrands: [],
-      timestamp: data.created_at || new Date().toISOString(),
+      timestamp: new Date(new Date(data.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
       confidence: data.confidence || 0,
       parsedData: undefined,
       whatsappDeepLink: data.chat_id ? `https://wa.me/${data.chat_id.replace('@c.us', '')}` : '',
