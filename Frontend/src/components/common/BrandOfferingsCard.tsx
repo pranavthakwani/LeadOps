@@ -81,7 +81,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
     const fetchBrands = async () => {
       try {
         setBrandsLoading(true);
-        const brands = await getAvailableBrands();
+        const brands = await getAvailableBrands(selectedDays);
         setAvailableBrands(brands);
         if (brands.length > 0 && !selectedBrand) {
           setSelectedBrand(brands[0]);
@@ -94,7 +94,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
     };
 
     fetchBrands();
-  }, []);
+  }, [selectedDays]); // Re-fetch brands when days filter changes
 
   // Fetch models when brand changes
   useEffect(() => {
@@ -102,7 +102,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
       const fetchModels = async () => {
         try {
           setModelsLoading(true);
-          const models = await getAvailableModels(selectedBrand);
+          const models = await getAvailableModels(selectedBrand, selectedDays);
           setAvailableModels(models);
           if (models.length > 0 && !selectedModel) {
             setSelectedModel(models[0]);
@@ -117,7 +117,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
 
       fetchModels();
     }
-  }, [selectedBrand]);
+  }, [selectedBrand, selectedDays]); // Re-fetch models when brand or days changes
 
   useEffect(() => {
     if (selectedBrand) {
@@ -125,6 +125,13 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
         try {
           setLoading(true);
           const data = await getTodayOfferingsByBrand(selectedBrand, selectedModel, '', selectedDays);
+          console.log('Frontend - Received offerings data:', {
+            brand: selectedBrand,
+            model: selectedModel,
+            days: selectedDays,
+            count: data.length,
+            sampleData: data.slice(0, 2)
+          });
           setOfferings(data);
         } catch (error) {
           console.error('Failed to fetch offerings:', error);
@@ -141,6 +148,7 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
   const handleBrandChange = (brand: string) => {
     setSelectedBrand(brand);
     setSelectedModel(''); // Reset model when brand changes
+    // Models will be re-fetched automatically by the useEffect
   };
 
   return (
@@ -286,7 +294,10 @@ export const BrandOfferingsCard: React.FC<BrandOfferingsCardProps> = ({ classNam
               Showing {offerings.length} offerings from {selectedBrand}
             </span>
             <span className="text-[#128c7e] font-semibold">
-              Lowest: ₹{Math.min(...offerings.map(o => o.parsedData?.price || 0)).toLocaleString('en-IN')}
+              Lowest: {(() => {
+                const prices = offerings.map(o => o.parsedData?.price).filter((p): p is number => p != null && p > 0);
+                return prices.length > 0 ? `¥${Math.min(...prices).toLocaleString('en-IN')}` : 'Price not available';
+              })()}
             </span>
           </div>
         </div>

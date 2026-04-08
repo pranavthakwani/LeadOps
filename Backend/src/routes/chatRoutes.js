@@ -1292,22 +1292,41 @@ router.get('/media/:waMessageId/thumbnail', async (req, res) => {
   }
 });
 
-// Get available brands from Supabase
+// Get available brands from Supabase (filtered by time frame)
 router.get('/brands', async (req, res) => {
   try {
     const supabase = getSupabaseChat();
+    const { days = '1' } = req.query;
     
-    // Get unique brands from dealer_leads
-    const { data: leadsBrands, error: leadsError } = await supabase
-      .from('dealer_leads')
-      .select('brand')
-      .not('brand', 'is', null);
+    console.log('Getting brands for days filter:', days);
     
-    // Get unique brands from distributor_offerings
+    // Calculate date range based on days parameter
+    const now = new Date();
+    const startDate = new Date(now);
+    
+    if (days === 'all') {
+      // Get all data (no date filter)
+      startDate.setFullYear(2020); // Go back to 2020 to get all data
+    } else {
+      const daysNum = parseInt(days);
+      startDate.setDate(now.getDate() - daysNum);
+    }
+    
+    console.log('Filtering brands from date:', startDate.toISOString());
+    
+    // Get unique brands from distributor_offerings within time frame
     const { data: offeringsBrands, error: offeringsError } = await supabase
       .from('distributor_offerings')
       .select('brand')
-      .not('brand', 'is', null);
+      .not('brand', 'is', null)
+      .gte('created_at', startDate.toISOString());
+    
+    // Get unique brands from leads within time frame
+    const { data: leadsBrands, error: leadsError } = await supabase
+      .from('dealer_leads')
+      .select('brand')
+      .not('brand', 'is', null)
+      .gte('created_at', startDate.toISOString());
     
     // Combine and deduplicate brands
     const allBrands = [
@@ -1315,41 +1334,64 @@ router.get('/brands', async (req, res) => {
       ...(offeringsBrands || []).map(item => item.brand)
     ].filter((brand, index, self) => brand && self.indexOf(brand) === index);
     
+    console.log(`Found ${allBrands.length} brands for ${days} days filter:`, allBrands);
+    
     res.json({
       success: true,
       data: allBrands.sort()
     });
   } catch (error) {
-    console.error('Brands endpoint error:', error);
+    console.error('Error fetching brands:', error);
     res.status(500).json({ error: 'Failed to fetch brands' });
   }
 });
 
-// Get available models for a brand from Supabase
+// Get available models for a brand from Supabase (filtered by time frame)
 router.get('/models/:brand', async (req, res) => {
   try {
     const supabase = getSupabaseChat();
     const { brand } = req.params;
+    const { days = '1' } = req.query;
     
-    // Get unique models from dealer_leads for this brand
+    console.log(`Getting models for brand ${brand} with days filter:`, days);
+    
+    // Calculate date range based on days parameter
+    const now = new Date();
+    const startDate = new Date(now);
+    
+    if (days === 'all') {
+      // Get all data (no date filter)
+      startDate.setFullYear(2020); // Go back to 2020 to get all data
+    } else {
+      const daysNum = parseInt(days);
+      startDate.setDate(now.getDate() - daysNum);
+    }
+    
+    console.log(`Filtering models for ${brand} from date:`, startDate.toISOString());
+    
+    // Get unique models from dealer_leads for this brand within time frame
     const { data: leadsModels, error: leadsError } = await supabase
       .from('dealer_leads')
       .select('model')
       .eq('brand', brand)
-      .not('model', 'is', null);
+      .not('model', 'is', null)
+      .gte('created_at', startDate.toISOString());
     
-    // Get unique models from distributor_offerings for this brand
+    // Get unique models from distributor_offerings for this brand within time frame
     const { data: offeringsModels, error: offeringsError } = await supabase
       .from('distributor_offerings')
       .select('model')
       .eq('brand', brand)
-      .not('model', 'is', null);
+      .not('model', 'is', null)
+      .gte('created_at', startDate.toISOString());
     
     // Combine and deduplicate models
     const allModels = [
       ...(leadsModels || []).map(item => item.model),
       ...(offeringsModels || []).map(item => item.model)
     ].filter((model, index, self) => model && self.indexOf(model) === index);
+    
+    console.log(`Found ${allModels.length} models for ${brand} in ${days} days filter:`, allModels);
     
     res.json({
       success: true,
@@ -1436,6 +1478,119 @@ router.get('/leads', async (req, res) => {
   } catch (error) {
     console.error('Leads endpoint error:', error);
     res.status(500).json({ error: 'Failed to fetch leads' });
+  }
+});
+
+// Get today's offerings by brand, model, and days from Supabase
+router.get('/today-offerings-by-brand', async (req, res) => {
+  try {
+    const supabase = getSupabaseChat();
+    const { brand, model, quantity, days = '1' } = req.query;
+    
+    console.log('Getting today\'s offerings by brand:', { brand, model, quantity, days });
+    
+    // First, let's check total available data without filters
+    const { count: totalCount } = await supabase
+      .from('distributor_offerings')
+      .select('*', { count: 'exact', head: true });
+    
+    console.log('Total distributor_offerings in database:', totalCount);
+    
+    // Get sample data to understand structure
+    const { data: sampleData } = await supabase
+      .from('distributor_offerings')
+      .select('brand, model, price, created_at')
+      .limit(3);
+    
+    console.log('Sample offerings data:', sampleData);
+    
+    // Get unique brands
+    const { data: brandsData } = await supabase
+      .from('distributor_offerings')
+      .select('brand')
+      .not('brand', 'is', null);
+    
+    const uniqueBrands = [...new Set(brandsData?.map(b => b.brand) || [])];
+    console.log('Available brands in database:', uniqueBrands);
+    
+    // Calculate date range based on days parameter
+    const now = new Date();
+    const startDate = new Date(now);
+    
+    if (days === 'all') {
+      // Get all data (no date filter)
+      startDate.setFullYear(2020); // Go back to 2020 to get all data
+      console.log('Using ALL data (no date filter)');
+    } else {
+      const daysNum = parseInt(days);
+      startDate.setDate(now.getDate() - daysNum);
+      console.log('Filtering by date from:', startDate.toISOString());
+    }
+    
+    let query = supabase
+      .from('distributor_offerings')
+      .select('*')
+      .gte('created_at', startDate.toISOString())
+      .order('price', { ascending: true }); // Order by price ascending to get lowest first
+    
+    // Apply filters if provided
+    if (brand && brand !== '') {
+      // Try both exact case and lowercase
+      query = query.or(`brand.eq.${brand},brand.eq.${brand.toLowerCase()},brand.eq.${brand.toUpperCase()}`);
+      console.log(`Filtering by brand: ${brand} (trying multiple cases)`);
+    }
+    
+    if (model && model !== '') {
+      query = query.eq('model', model);
+      console.log(`Filtering by model: ${model}`);
+    }
+    
+    if (quantity && quantity !== '') {
+      query = query.eq('quantity', parseInt(quantity));
+      console.log(`Filtering by quantity: ${quantity}`);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('Error fetching today\'s offerings by brand:', error);
+      return res.status(500).json({ error: 'Failed to fetch offerings' });
+    }
+    
+    // Transform distributor_offerings data to match frontend Message interface
+    const transformedData = (data || []).map(offering => ({
+      id: offering.id.toString(),
+      wa_message_id: offering.wa_message_id,
+      sender: offering.sender || 'Unknown',
+      senderNumber: offering.chat_id || '',
+      preview: offering.raw_message ? offering.raw_message.substring(0, 100) + '...' : '',
+      rawMessage: offering.raw_message || '',
+      classification: 'offering',
+      detectedBrands: offering.brand ? [offering.brand] : [],
+      timestamp: new Date(new Date(offering.created_at || new Date()).getTime() + (5.5 * 60 * 60 * 1000)).toISOString(),
+      confidence: offering.confidence || 0,
+      parsedData: offering.brand ? {
+        brand: offering.brand,
+        model: offering.model,
+        ram: offering.ram,
+        storage: offering.storage,
+        quantity: offering.quantity,
+        price: offering.price,
+        gst: offering.gst,
+        dispatch: offering.dispatch,
+        color: offering.color
+      } : undefined
+    }));
+    
+    console.log(`Found ${transformedData.length} offerings for brand ${brand}`);
+    
+    res.json({
+      success: true,
+      data: transformedData
+    });
+  } catch (error) {
+    console.error('Error in /today-offerings-by-brand:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

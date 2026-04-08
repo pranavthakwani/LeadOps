@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../config/network';
 import type { Message, Contact, DashboardStats, HealthStatus, Product } from '../types/message';
 
 const api = axios.create({
@@ -239,9 +240,10 @@ export const searchProducts = async (params: {
   }
 };
 
-export const getAvailableBrands = async (): Promise<string[]> => {
+export const getAvailableBrands = async (days?: string): Promise<string[]> => {
   try {
-    const response = await api.get('/api/brands');
+    const params = days ? `?days=${days}` : '';
+    const response = await api.get(`/api/brands${params}`);
     return response.data.data || [];
   } catch (error) {
     console.error('Error fetching brands:', error);
@@ -249,9 +251,10 @@ export const getAvailableBrands = async (): Promise<string[]> => {
   }
 };
 
-export const getAvailableModels = async (brand: string): Promise<string[]> => {
+export const getAvailableModels = async (brand: string, days?: string): Promise<string[]> => {
   try {
-    const response = await api.get(`/api/models/${brand}`);
+    const params = days ? `?days=${days}` : '';
+    const response = await api.get(`/api/models/${brand}${params}`);
     return response.data.data || [];
   } catch (error) {
     console.error('Error fetching models:', error);
@@ -260,6 +263,20 @@ export const getAvailableModels = async (brand: string): Promise<string[]> => {
 };
 
 export const getTodayOfferingsByBrand = async (brand?: string, model?: string, quantity?: string, days?: string): Promise<Message[]> => {
-  console.log('getTodayOfferingsByBrand called but not implemented for Supabase yet');
-  return [];
+  try {
+    const params = new URLSearchParams();
+    if (brand) params.append('brand', brand);
+    if (model) params.append('model', model);
+    if (quantity) params.append('quantity', quantity);
+    if (days) params.append('days', days);
+    
+    const url = `${API_BASE_URL}/today-offerings-by-brand${params.toString() ? `?${params.toString()}` : ''}`;
+    console.log('Fetching today offerings by brand:', url);
+    
+    const response = await axios.get(url);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error fetching today offerings by brand:', error);
+    return [];
+  }
 };
